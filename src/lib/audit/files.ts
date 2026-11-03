@@ -265,12 +265,12 @@ export async function collectFiles(baseUrl: string, html: HtmlFacts | null): Pro
 
   const get = (path: string): RawFile | undefined => {
     const raw = byPath.get(path);
-    if (!raw || raw.entry.status === 0 || raw.entry.soft404) return undefined;
+    if (!raw || raw.entry.status < 200 || raw.entry.status >= 300 || raw.entry.soft404) return undefined;
     return raw;
   };
   const ok = (path: string) => {
     const entry = entries[path];
-    return Boolean(entry && entry.status >= 200 && entry.status < 400 && !entry.soft404);
+    return Boolean(entry && entry.status >= 200 && entry.status < 300 && !entry.soft404);
   };
 
   const robotsRaw = get("/robots.txt");

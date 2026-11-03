@@ -572,7 +572,7 @@ export function wellknownChecks(facts: AuditFacts): CheckResult[] {
   const results: CheckResult[] = [];
   results.push(s.present ? pass("security-txt", s.path) : fail("security-txt", "No security.txt"));
   results.push(
-    (f.entries["/security.txt"]?.status ?? 0) >= 200 && (f.entries["/security.txt"]?.status ?? 0) < 400
+    (f.entries["/security.txt"]?.status ?? 0) >= 200 && (f.entries["/security.txt"]?.status ?? 0) < 300
       ? pass("security-txt-root", "/security.txt works")
       : info("security-txt-root", "No /security.txt fallback"),
   );
