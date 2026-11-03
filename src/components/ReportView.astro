@@ -213,6 +213,7 @@ const psi = performance?.psi;
               <div><dt>Subject</dt><dd>{apexCert.subject || "—"}</dd></div>
               <div><dt>Valid until</dt><dd>{new Date(apexCert.validTo).toLocaleDateString("en-GB", { dateStyle: "long" })} · {apexCert.daysRemaining} days</dd></div>
               <div><dt>Chain</dt><dd>{apexCert.chainLength} certificate{apexCert.chainLength === 1 ? "" : "s"} · {apexCert.authorized ? "trusted" : "not trusted"}</dd></div>
+              <div><dt>TLS grade</dt><dd>{transport?.tls.apex?.grade ? `${transport.tls.apex.grade} · SSL Labs` : transport?.tls.apex?.pending ? "Pending · SSL Labs scan running" : "Not available"}</dd></div>
               <div><dt>Names</dt><dd class="break-all">{apexCert.sans.slice(0, 8).join(", ") || apexCert.subject}</dd></div>
             </dl>
           ) : (

@@ -119,21 +119,33 @@ function certFromLab(cert: LabCert): CertificateInfo {
 
 /** Latest certificate from Certificate Transparency, used as a fast fallback. */
 export async function certificateFromCrt(domain: string): Promise<CertificateInfo | null> {
-  try {
-    const url = `${CRTSH}?q=${encodeURIComponent(domain)}&output=json&exclude=expired`;
-    const response = await fetch(url, { signal: AbortSignal.timeout(12_000) });
-    if (!response.ok) return null;
-    const entries = (await response.json()) as CrtEntry[];
-    if (!Array.isArray(entries) || !entries.length) return null;
+  const url = `${CRTSH}?q=${encodeURIComponent(domain)}&output=json&exclude=expired`;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const response = await fetch(url, {
+        signal: AbortSignal.timeout(8_000),
+        headers: {
+          accept: "application/json",
+          "user-agent":
+            "Mozilla/5.0 (compatible; LexiphanicAudit/1.0; +https://audit.lexiphanic.co.uk/)",
+        },
+      });
+      if (!response.ok) throw new Error(`crt.sh returned ${response.status}`);
+      const entries = (await response.json()) as CrtEntry[];
+      if (!Array.isArray(entries) || !entries.length) return null;
 
-    entries.sort((a, b) => String(b.not_before ?? "").localeCompare(String(a.not_before ?? "")));
-    const latest = entries[0];
-    const notAfter = latest.not_after ? new Date(latest.not_after).valueOf() : 0;
-    const daysRemaining = notAfter ? Math.round((notAfter - Date.now()) / 86_400_000) : 0;
-    return certFromCrt(latest, daysRemaining);
-  } catch {
-    return null;
+      entries.sort((a, b) => String(b.not_before ?? "").localeCompare(String(a.not_before ?? "")));
+      const latest = entries[0];
+      const notAfter = latest.not_after ? new Date(latest.not_after).valueOf() : 0;
+      const daysRemaining = notAfter ? Math.round((notAfter - Date.now()) / 86_400_000) : 0;
+      return certFromCrt(latest, daysRemaining);
+    } catch {
+      if (attempt < 1) {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+    }
   }
+  return null;
 }
 
 function emptyLabs(state: "error" | "pending", error?: string): LabsSummary {
