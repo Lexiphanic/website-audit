@@ -18,14 +18,20 @@ const path = `/reports/${domain}`;
 ---
 
 {error ? (
-  <BaseLayout title="Report not found" description="That address is not a public domain we can audit." path={path} noindex>
+  <BaseLayout title={error === "invalid-report" ? "Report unavailable" : "Report not found"} description={error === "invalid-report" ? "This report could not be read." : "That address is not a public domain we can audit."} path={path} noindex>
     <main id="main" class="mx-auto w-[min(900px,100%-3rem)] pt-[clamp(7rem,12vw,10rem)] pb-24">
-      <p class="eyebrow">Not found</p>
-      <h1 class="mt-4 font-display text-[clamp(2rem,5vw,3.4rem)] font-semibold text-cream">That address does not look like a public domain.</h1>
+      <p class="eyebrow">{error === "invalid-report" ? "Report unavailable" : "Not found"}</p>
+      <h1 class="mt-4 font-display text-[clamp(2rem,5vw,3.4rem)] font-semibold text-cream">
+        {error === "invalid-report" ? "This report could not be read." : "That address does not look like a public domain."}
+      </h1>
       <p class="mt-4 max-w-[60ch] text-[0.95rem] leading-relaxed text-muted">
-        Enter a domain such as <span class="text-lilac-100">example.com</span>. IP addresses, private hosts and unusual ports are not audited.
+        {error === "invalid-report"
+          ? "The stored report is incomplete. Running a fresh audit will replace it."
+          : "Enter a domain such as example.com. IP addresses, private hosts and unusual ports are not audited."}
       </p>
-      <a class="report-button mt-8 inline-flex" href="/#audit">Try another site</a>
+      <a class="report-button mt-8 inline-flex" href={error === "invalid-report" ? `/?url=${encodeURIComponent(domain)}#audit` : "/#audit"}>
+        {error === "invalid-report" ? "Run a fresh audit" : "Try another site"}
+      </a>
     </main>
   </BaseLayout>
 ) : !row ? (

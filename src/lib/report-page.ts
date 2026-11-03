@@ -10,7 +10,7 @@ export interface ReportPageData {
   row: ReportRow | null;
   payload: ReportPayload | null;
   dates: Pick<ReportRow, "report_date" | "score" | "grade" | "status">[];
-  error: "invalid-domain" | "invalid-date" | null;
+  error: "invalid-domain" | "invalid-date" | "invalid-report" | null;
 }
 
 export async function loadReportPage(rawDomain: string, rawDate = ""): Promise<ReportPageData> {
@@ -38,6 +38,10 @@ export async function loadReportPage(rawDomain: string, rawDate = ""): Promise<R
     } catch {
       payload = null;
     }
+  }
+
+  if (row?.status === "complete" && !payload) {
+    return { domain, date: rawDate, row, payload: null, dates, error: "invalid-report" };
   }
 
   return { domain, date: rawDate, row, payload, dates, error: null };

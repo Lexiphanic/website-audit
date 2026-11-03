@@ -53,9 +53,12 @@ export async function hasFreshReport(
 ): Promise<ReportRow | null> {
   const row = await getReport(env, domain, date);
   if (!row) return null;
-  if (row.status === "queued" || row.status === "running") return row;
+  const updated = new Date(row.updated_at).valueOf();
+  if (row.status === "queued" || row.status === "running") {
+    // A stuck run must not block the domain for ever.
+    return Date.now() - updated < 15 * 60_000 ? row : null;
+  }
   if (row.status === "complete") {
-    const updated = new Date(row.updated_at).valueOf();
     if (Date.now() - updated < minutes * 60_000) return row;
   }
   return null;
