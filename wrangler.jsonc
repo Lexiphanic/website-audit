@@ -30,7 +30,7 @@
       "binding": "DB",
       "database_name": "audit-lexiphanic-co-uk",
       // Replace after `wrangler d1 create audit-lexiphanic-co-uk`.
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "a7bb1c74-1d22-41b4-a701-b7a6c481e95d",
       "migrations_dir": "migrations"
     }
   ],
@@ -56,7 +56,7 @@
     // Create a Turnstile widget for audit.lexiphanic.co.uk and paste its site
     // key here. With an empty value the form renders without a widget; the API
     // refuses scans in production when TURNSTILE_SECRET is absent.
-    "TURNSTILE_SITE_KEY": "",
+    "TURNSTILE_SITE_KEY": "0x4AAAAAAFyRdQ4-cYlNpURV",
     "TURNSTILE_HOSTNAMES": "audit.lexiphanic.co.uk"
   }
 }
