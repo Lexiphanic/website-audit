@@ -39,7 +39,7 @@
   "ratelimits": [
     {
       "name": "SCAN_RATE",
-      "namespace_id": "1001",
+      "namespace_id": "741003",
       "simple": {
         "limit": 5,
         "period": 60
