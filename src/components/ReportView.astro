@@ -1,0 +1,535 @@
+---
+import { CATEGORIES, type CheckResult, type ReportPayload } from "../lib/audit/types";
+import { definitionFor } from "../lib/audit/registry";
+import { formatDate, ukDateTime } from "../lib/util";
+import { site } from "../lib/site";
+
+interface Props {
+  payload: ReportPayload;
+  dates?: { report_date: string; score: number | null; grade: string | null; status: string }[];
+}
+
+const { payload, dates = [] } = Astro.props;
+const facts = payload.facts;
+const transport = facts.transport;
+const dns = facts.dns;
+const files = facts.files;
+const performance = facts.performance;
+const migration = facts.migration;
+
+const grouped = CATEGORIES.map((category) => ({
+  ...category,
+  score: payload.categories.find((item) => item.key === category.key)?.score ?? null,
+  checks: payload.checks.filter((check) => definitionFor(check.key).category === category.key),
+}));
+
+const failCount = payload.meta.counts.fail;
+const warnCount = payload.meta.counts.warn;
+
+function pill(status: CheckResult["status"]): string {
+  if (status === "pass") return "badge-ok";
+  if (status === "warn") return "badge-warn";
+  if (status === "fail") return "badge-bad";
+  if (status === "info") return "badge-info";
+  return "badge-muted";
+}
+
+function label(status: CheckResult["status"]): string {
+  if (status === "pass") return "Pass";
+  if (status === "warn") return "Warning";
+  if (status === "fail") return "Fail";
+  if (status === "info") return "Info";
+  if (status === "skipped") return "Not checked";
+  return "Error";
+}
+
+function severityLabel(value: string): string {
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function bytes(value: number): string {
+  if (!value) return "—";
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${Math.round(value / 1024)} KB`;
+  return `${(value / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function navDate(value: string): string {
+  return value.slice(5);
+}
+
+const apexCert = transport?.tls.apex?.certificate ?? null;
+const hsts = transport?.hsts;
+const score = payload.meta.score;
+const grade = payload.meta.grade;
+const top = payload.summary.topFindings;
+const psi = performance?.psi;
+---
+
+<article class="report" data-report>
+  <!-- Cover -->
+  <header class="report-cover" id="report-top">
+    <div class="mx-auto w-[min(1200px,100%-3rem)]">
+      <div class="report-cover-brand hidden items-baseline gap-2 print:flex">
+        <span class="font-display text-[24px] leading-none font-bold tracking-[-0.02em] text-cream">Lexiphanic</span>
+        <span class="text-[0.6rem] font-semibold tracking-[0.16em] text-violet-300">AUDIT</span>
+      </div>
+      <div class="flex flex-wrap items-start justify-between gap-6">
+        <div>
+          <p class="eyebrow">Website migration audit</p>
+          <h1 class="mt-4 font-display text-[clamp(2.2rem,5.5vw,4.2rem)] leading-[1.02] font-semibold tracking-[-0.03em] text-cream">
+            {payload.meta.domain}
+          </h1>
+          <p class="mt-3 max-w-[60ch] text-[0.95rem] leading-relaxed text-muted">
+            Checked {formatDate(payload.meta.reportDate)} · {payload.meta.coverage.checked} of {payload.meta.coverage.total} scored checks ran · {payload.meta.counts.fail} failures · {payload.meta.counts.warn} warnings
+          </p>
+        </div>
+
+        <div class="flex items-center gap-5">
+          <div class="score-ring" aria-label={`Score ${score ?? "not scored"} out of 100, grade ${grade}`}>
+            <svg viewBox="0 0 120 120" role="img">
+              <defs>
+                <linearGradient id="score-gradient" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0%" stop-color="#a78bfa"></stop>
+                  <stop offset="100%" stop-color="#7c3aed"></stop>
+                </linearGradient>
+              </defs>
+              <circle cx="60" cy="60" r="52" fill="none" stroke="rgba(196,181,253,0.16)" stroke-width="10"></circle>
+              <circle cx="60" cy="60" r="52" fill="none" stroke="url(#score-gradient)" stroke-width="10" stroke-linecap="round" pathLength="100" stroke-dasharray={`${score ?? 0} ${100 - (score ?? 0)}`} transform="rotate(-90 60 60)"></circle>
+            </svg>
+            <div class="score-ring-label">
+              <strong>{grade}</strong>
+              <span>{score ?? "—"}</span>
+            </div>
+          </div>
+          <div class="hidden text-[0.76rem] text-muted min-[560px]:block print:hidden">
+            <p class="font-semibold text-cream">Overall grade</p>
+            <p class="mt-1">Weighted across eight categories.</p>
+            <p class="mt-3">Generated {ukDateTime(payload.meta.generatedAt)}</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-8 flex flex-wrap items-center gap-3 print:hidden">
+        <button type="button" class="report-button" data-print-button>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7 9V4h10v5M7 17H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2M7 14h10v6H7z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"></path></svg>
+          Print / Save as PDF
+        </button>
+        <button type="button" class="report-button report-button-ghost" data-copy-link>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.1 0l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1M14 11a5 5 0 0 0-7.1 0l-2 2A5 5 0 0 0 12 20.1l1.1-1.1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg>
+          Copy link
+        </button>
+        <a class="report-button report-button-ghost" href="/#audit">Run another</a>
+      </div>
+
+      <div class="mt-10 grid grid-cols-2 gap-3 min-[760px]:grid-cols-4">
+        <div class="report-stat"><b>{payload.meta.counts.pass}</b><span>Passed</span></div>
+        <div class="report-stat"><b>{warnCount}</b><span>Warnings</span></div>
+        <div class="report-stat"><b>{failCount}</b><span>Failures</span></div>
+        <div class="report-stat"><b>{payload.meta.counts.skipped + payload.meta.counts.error}</b><span>Not checked</span></div>
+      </div>
+    </div>
+  </header>
+
+  <div class="mx-auto w-[min(1200px,100%-3rem)]">
+    <!-- Summary -->
+    <section class="report-section" id="summary">
+      <div class="report-section-head">
+        <p class="eyebrow">Executive summary</p>
+        <h2>{payload.summary.headline}</h2>
+        <p>
+          This is a public-page audit. It is designed to show what a migration would inherit, not to
+          score the site for its own sake. The findings below are the ones to discuss first.
+        </p>
+      </div>
+
+      {top.length ? (
+        <div class="mt-8 grid grid-cols-1 gap-4 min-[760px]:grid-cols-2 min-[1080px]:grid-cols-3">
+          {top.map((finding) => {
+            const def = definitionFor(finding.key);
+            return (
+              <article class="finding-card">
+                <div class="flex items-center justify-between gap-3">
+                  <span class={`badge ${finding.severity === "critical" || finding.severity === "high" ? "badge-bad" : "badge-warn"}`}>{severityLabel(finding.severity)}</span>
+                  <span class="text-[0.68rem] tracking-[0.12em] text-muted uppercase">{CATEGORIES.find((category) => category.key === def.category)?.short}</span>
+                </div>
+                <h3>{finding.label}</h3>
+                <p>{finding.observed}</p>
+                <details open>
+                  <summary>Why it matters</summary>
+                  <p>{def.why}</p>
+                  <p class="mt-3"><strong>The fix:</strong> {def.fix}</p>
+                </details>
+              </article>
+            );
+          })}
+        </div>
+      ) : (
+        <p class="mt-6 rounded-xl border border-line bg-[rgba(36,22,54,0.25)] p-4 text-[0.9rem] text-muted">
+          No failures or warnings were recorded in the scored checks. The appendix still lists everything that was checked.
+        </p>
+      )}
+    </section>
+
+    <!-- Transport at a glance -->
+    <section class="report-section" id="transport">
+      <div class="report-section-head">
+        <p class="eyebrow">Transport at a glance</p>
+        <h2>Where the site lives, and how it answers.</h2>
+        <p>The four addresses every visitor might type, the certificate actually served, and the HSTS policy in front of it.</p>
+      </div>
+
+      <div class="mt-8 grid grid-cols-1 gap-5 min-[1000px]:grid-cols-[1.2fr_0.8fr]">
+        <div class="report-panel">
+          <h3 class="report-panel-title">www and apex matrix</h3>
+          <div class="table-scroll mt-4">
+            <table class="report-table">
+              <thead>
+                <tr><th>Requested</th><th>Status</th><th>Final URL</th><th>Hops</th></tr>
+              </thead>
+              <tbody>
+                {transport?.probes.map((probe) => (
+                  <tr>
+                    <td class="mono">{probe.url}</td>
+                    <td><span class={`badge ${(probe.hops[0]?.status ?? probe.status) >= 300 ? "badge-info" : "badge-ok"}`}>{probe.hops[0]?.status ?? probe.status ?? "—"}</span></td>
+                    <td class="mono break-all">{probe.finalUrl}</td>
+                    <td>{probe.hops.length}</td>
+                  </tr>
+                )) ?? <tr><td colspan="4">Transport data was not collected.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+          <p class="report-note">
+            A clean migration has one canonical host and one redirect hop. Two 200s at the apex and www means
+            duplicate content even if a canonical tag agrees with itself.
+          </p>
+        </div>
+
+        <div class="report-panel">
+          <h3 class="report-panel-title">Certificate</h3>
+          {apexCert ? (
+            <dl class="report-dl mt-4">
+              <div><dt>Issuer</dt><dd>{apexCert.issuerOrganisation || apexCert.issuer || "Unknown"}</dd></div>
+              <div><dt>Subject</dt><dd>{apexCert.subject || "—"}</dd></div>
+              <div><dt>Valid until</dt><dd>{new Date(apexCert.validTo).toLocaleDateString("en-GB", { dateStyle: "long" })} · {apexCert.daysRemaining} days</dd></div>
+              <div><dt>Chain</dt><dd>{apexCert.chainLength} certificate{apexCert.chainLength === 1 ? "" : "s"} · {apexCert.authorized ? "trusted" : "not trusted"}</dd></div>
+              <div><dt>Names</dt><dd class="break-all">{apexCert.sans.slice(0, 8).join(", ") || apexCert.subject}</dd></div>
+            </dl>
+          ) : (
+            <p class="mt-4 text-[0.86rem] text-muted">No certificate could be read from the apex.</p>
+          )}
+          <div class="mt-5 border-t border-line pt-4">
+            <h4 class="text-[0.72rem] font-semibold tracking-[0.14em] text-violet-300 uppercase">HSTS</h4>
+            {hsts?.apex.present ? (
+              <p class="mt-2 text-[0.84rem] leading-relaxed text-muted">
+                <span class="text-lilac-100">{hsts.apex.raw}</span><br />
+                preload list: {hsts.preloadStatus ?? "not checked"}
+              </p>
+            ) : (
+              <p class="mt-2 text-[0.84rem] text-muted">No Strict-Transport-Security header on the apex.</p>
+            )}
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Scorecard -->
+    <section class="report-section" id="scorecard">
+      <div class="report-section-head">
+        <p class="eyebrow">Scorecard</p>
+        <h2>Eight categories, one weighted score.</h2>
+        <p>Each bar is the weighted pass rate within that category. Null scores mean nothing scorable ran there.</p>
+      </div>
+
+      <div class="mt-8 grid grid-cols-1 gap-4 min-[760px]:grid-cols-2">
+        {payload.categories.map((category) => (
+          <div class="report-panel">
+            <div class="flex items-center justify-between gap-3">
+              <h3 class="report-panel-title">{category.label}</h3>
+              <span class="text-[0.9rem] font-semibold text-cream">{category.score ?? "—"}{category.score === null ? "" : "/100"}</span>
+            </div>
+            <div class="mt-3 h-2 overflow-hidden rounded-full bg-[rgba(196,181,253,0.12)]">
+              <div class="h-full rounded-full bg-[linear-gradient(90deg,var(--color-violet-400),var(--color-violet-600))]" style={`width:${category.score ?? 0}%`}></div>
+            </div>
+            <p class="mt-2 text-[0.76rem] text-muted">
+              {category.passed} passed · {category.warnings} warnings · {category.failed} failed · {category.notChecked} not checked · weight {category.weight}%
+            </p>
+          </div>
+        ))}
+      </div>
+    </section>
+
+    <!-- Detailed findings -->
+    <section class="report-section" id="findings">
+      <div class="report-section-head">
+        <p class="eyebrow">Detailed findings</p>
+        <h2>Every check, with the evidence.</h2>
+        <p>
+          Open a row for why it matters and what we would do. Passed checks are kept in the list so the report
+          is a complete record, not only a list of complaints.
+        </p>
+      </div>
+
+      <div class="mt-8 grid gap-8">
+        {grouped.map((category) => (
+          <section class="report-category" id={`category-${category.key}`}>
+            <div class="flex flex-wrap items-end justify-between gap-3 border-b border-line pb-3">
+              <div>
+                <h3 class="font-display text-[1.25rem] font-semibold text-cream">{category.label}</h3>
+                <p class="mt-1 text-[0.8rem] text-muted">{category.description}</p>
+              </div>
+              <span class="text-[0.82rem] font-semibold text-violet-300">{category.score ?? "—"}{category.score === null ? "" : "/100"}</span>
+            </div>
+
+            <div class="mt-3 grid gap-2">
+              {category.checks.map((check) => {
+                const def = definitionFor(check.key);
+                const notable = check.status === "fail" || check.status === "warn";
+                return (
+                  <details class={`report-check ${check.status === "pass" ? "is-pass" : ""}`} open={notable}>
+                    <summary>
+                      <span class={`badge ${pill(check.status)} shrink-0`}>{label(check.status)}</span>
+                      <span class="report-check-title">{def.label}</span>
+                      <span class="report-check-observed">{check.observed}</span>
+                      <span class="report-check-toggle" aria-hidden="true">+</span>
+                    </summary>
+                    <div class="report-check-body">
+                      <div class="grid gap-4 min-[760px]:grid-cols-2">
+                        <div>
+                          <h4>Why it matters</h4>
+                          <p>{def.why}</p>
+                        </div>
+                        <div>
+                          <h4>The fix</h4>
+                          <p>{def.fix}</p>
+                        </div>
+                      </div>
+                      {check.evidence && (
+                        <div class="mt-4">
+                          <h4>Evidence</h4>
+                          <pre>{check.evidence}</pre>
+                        </div>
+                      )}
+                    </div>
+                  </details>
+                );
+              })}
+            </div>
+          </section>
+        ))}
+      </div>
+    </section>
+
+    <!-- Migration notes -->
+    <section class="report-section" id="migration">
+      <div class="report-section-head">
+        <p class="eyebrow">Migration notes</p>
+        <h2>What moving this site would involve.</h2>
+        <p>These are the facts we would take into a migration kick-off: platform, hosting, content, email and DNS.</p>
+      </div>
+
+      <div class="mt-8 grid grid-cols-1 gap-4 min-[760px]:grid-cols-2 min-[1080px]:grid-cols-3">
+        {[
+          ["Platform", migration?.platform ?? "Unknown", migration?.platformConfidence === "low" ? "Low confidence" : `${migration?.platformConfidence ?? "—"} confidence`],
+          ["Hosting", migration?.hosting ?? "Unknown", "DNS, CDN and edge headers"],
+          ["Pages in sitemap", migration?.pageCount ? String(migration.pageCount) : "Not available", "The URL inventory to redirect"],
+          ["Email", migration?.emailProvider ?? "Unknown", "MX, SPF, DKIM and DMARC must survive"],
+          ["Registrar", migration?.registrar ?? "Unknown", migration?.domainExpires ? `Expires ${new Date(migration.domainExpires).toLocaleDateString("en-GB")}` : "Registry data unavailable"],
+          ["Languages", migration?.languages.length ? migration.languages.join(", ") : "Single language", "URL and hreflang mapping"],
+        ].map(([title, value, note]) => (
+          <div class="report-panel">
+            <h3 class="report-panel-title">{title}</h3>
+            <p class="mt-2 text-[1rem] font-medium text-cream">{value}</p>
+            <p class="mt-1 text-[0.78rem] text-muted">{note}</p>
+          </div>
+        ))}
+      </div>
+
+      <div class="mt-5 grid grid-cols-1 gap-4 min-[900px]:grid-cols-2">
+        <div class="report-panel">
+          <h3 class="report-panel-title">Inventory</h3>
+          <div class="mt-3 flex flex-wrap gap-2">
+            {migration?.ecommerce.map((item) => <span class="badge badge-info">{item}</span>)}
+            {migration?.booking.map((item) => <span class="badge badge-info">{item}</span>)}
+            {migration?.analytics.map((item) => <span class="badge badge-muted">{item}</span>)}
+            {migration?.legacy.map((item) => <span class="badge badge-warn">{item}</span>)}
+            {!migration?.ecommerce.length && !migration?.booking.length && !migration?.analytics.length && !migration?.legacy.length && (
+              <span class="text-[0.84rem] text-muted">No commerce, booking, analytics or legacy signals detected.</span>
+            )}
+          </div>
+        </div>
+        <div class="report-panel">
+          <h3 class="report-panel-title">Legal and contact</h3>
+          <div class="mt-3 flex flex-wrap gap-2">
+            {migration?.legalPages.map((item) => <span class="badge badge-ok">{item}</span>)}
+            {!migration?.legalPages.length && <span class="badge badge-bad">No legal pages found</span>}
+          </div>
+          <p class="mt-4 text-[0.84rem] leading-relaxed text-muted">
+            {migration?.emails.length ? migration.emails.slice(0, 3).join(", ") : "No public email found"}
+            {migration?.phones.length ? ` · ${migration.phones.slice(0, 2).join(", ")}` : ""}
+          </p>
+        </div>
+      </div>
+
+      <div class="report-panel mt-5">
+        <h3 class="report-panel-title">What we would do next</h3>
+        <ol class="report-next mt-3">
+          <li><b>Inventory the URLs.</b> Export the sitemap and crawl the rest; map every old URL to its new home before launch.</li>
+          <li><b>Freeze the moving parts.</b> Record the current DNS, MX, SPF, DKIM, DMARC, analytics tags and third-party embeds.</li>
+          <li><b>Rebuild on the canonical host.</b> Keep one host, one certificate and one redirect policy from day one.</li>
+          <li><b>Launch with evidence.</b> Re-run this audit after the move and compare the two reports.</li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- CTA -->
+    <section class="report-section report-cta" id="next">
+      <div>
+        <p class="eyebrow">Next step</p>
+        <h2>We can move it for you.</h2>
+        <p>
+          Lexiphanic builds and migrates bespoke sites from {site.pricing.setup} setup plus {site.pricing.monthly}/month.
+          If you want the findings above turned into a migration plan, email {site.email} or call {site.phoneDisplay}.
+        </p>
+      </div>
+      <a class="report-button" href={`mailto:${site.email}?subject=${encodeURIComponent(`Migration audit: ${payload.meta.domain}`)}`}>
+        Talk to Lexiphanic
+      </a>
+    </section>
+
+    <!-- Appendix -->
+    <section class="report-section" id="appendix">
+      <div class="report-section-head">
+        <p class="eyebrow">Appendix</p>
+        <h2>Evidence and method.</h2>
+        <p>Everything here was collected from public responses on {ukDateTime(payload.meta.generatedAt)}.</p>
+      </div>
+
+      <div class="mt-8 grid grid-cols-1 gap-5 min-[900px]:grid-cols-2">
+        <div class="report-panel">
+          <h3 class="report-panel-title">DNS</h3>
+          <dl class="report-dl mt-3">
+            <div><dt>A</dt><dd class="mono">{dns?.records.a.slice(0, 4).join(", ") || "—"}</dd></div>
+            <div><dt>AAAA</dt><dd class="mono">{dns?.records.aaaa.slice(0, 4).join(", ") || "—"}</dd></div>
+            <div><dt>NS</dt><dd class="mono">{dns?.records.ns.slice(0, 4).join(", ") || "—"}</dd></div>
+            <div><dt>MX</dt><dd class="mono">{dns?.records.mx.map((mx) => mx.host).slice(0, 4).join(", ") || "—"}</dd></div>
+            <div><dt>CAA</dt><dd>{dns?.records.caa.length ?? 0} record{(dns?.records.caa.length ?? 0) === 1 ? "" : "s"}</dd></div>
+            <div><dt>DNSSEC</dt><dd>{dns?.records.ds && dns?.records.dnskey ? "signed" : "not signed"}</dd></div>
+          </dl>
+        </div>
+
+        <div class="report-panel">
+          <h3 class="report-panel-title">Email authentication</h3>
+          <dl class="report-dl mt-3">
+            <div><dt>SPF</dt><dd>{dns?.email.spf.present ? dns.email.spf.record : "Missing"}</dd></div>
+            <div><dt>DMARC</dt><dd>{dns?.email.dmarc.present ? dns.email.dmarc.record : "Missing"}</dd></div>
+            <div><dt>DKIM</dt><dd>{dns?.email.dkimSelectors.length ? dns.email.dkimSelectors.join(", ") : "No common selector found"}</dd></div>
+            <div><dt>BIMI</dt><dd>{dns?.email.bimi ? "present" : "not present"}</dd></div>
+            <div><dt>MTA-STS</dt><dd>{dns?.email.mtaSts ? "present" : "not present"}</dd></div>
+            <div><dt>TLS-RPT</dt><dd>{dns?.email.tlsRpt ? "present" : "not present"}</dd></div>
+          </dl>
+        </div>
+
+        <div class="report-panel">
+          <h3 class="report-panel-title">Well-known files</h3>
+          <div class="table-scroll mt-3">
+            <table class="report-table report-table-compact">
+              <thead><tr><th>Path</th><th>Status</th><th>Type</th></tr></thead>
+              <tbody>
+                {Object.values(files?.entries ?? {}).filter((entry) => entry.path.startsWith("/.well-known") || entry.path === "/security.txt" || entry.path === "/llms.txt").map((entry) => (
+                  <tr>
+                    <td class="mono">{entry.path}</td>
+                    <td>{entry.soft404 ? "soft 404" : entry.status || "—"}</td>
+                    <td class="text-muted">{entry.contentType.split(";")[0] || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="report-panel">
+          <h3 class="report-panel-title">Performance</h3>
+          <dl class="report-dl mt-3">
+            <div><dt>TTFB</dt><dd>{performance?.ttfbMs ?? "—"} ms</dd></div>
+            <div><dt>HTML</dt><dd>{bytes(performance?.htmlBytes ?? 0)}</dd></div>
+            <div><dt>Compression</dt><dd>{performance?.contentEncoding || "none"}</dd></div>
+            <div><dt>CDN</dt><dd>{performance?.cdn ?? "—"}</dd></div>
+            <div><dt>Lighthouse</dt><dd>{psi ? `Perf ${psi.performance ?? "—"} · A11y ${psi.accessibility ?? "—"} · BP ${psi.bestPractices ?? "—"} · SEO ${psi.seo ?? "—"}` : "Not run (no PageSpeed key)"}</dd></div>
+            <div><dt>Core Web Vitals</dt><dd>{psi ? `LCP ${psi.lcp} · CLS ${psi.cls} · INP ${psi.inp}` : "—"}</dd></div>
+          </dl>
+        </div>
+      </div>
+
+      <div class="report-panel mt-5">
+        <h3 class="report-panel-title">Method and limits</h3>
+        <div class="report-method">
+          <p>
+            The audit is built from public HTTP responses, DNS-over-HTTPS records, the certificate served on
+            port 443, and the HTML of the homepage. It fetches a small sample of well-known files and sitemap
+            URLs. It does not log in, submit forms, crawl the whole site or test for vulnerabilities.
+          </p>
+          <p>
+            The TLS certificate and protocol are measured with a real handshake from Cloudflare's network.
+            Legacy TLS 1.0/1.1 support may be reported as “not checked” where the runtime refuses the
+            handshake. HSTS preload list status comes from hstspreload.org; the header alone only requests
+            inclusion. PageSpeed Insights is optional and, when no key is configured, Lighthouse and field
+            Core Web Vitals are marked as not run.
+          </p>
+          <p>
+            Scores are weighted pass rates. A pass scores 1, a warning 0.5 and a failure 0. Informational,
+            not-applicable and not-checked results are excluded. The grade bands are A 90+, B 80+, C 70+,
+            D 60+, E 50+ and F below 50.
+          </p>
+        </div>
+      </div>
+
+      <div class="report-footer">
+        <span>Lexiphanic Audit · {payload.meta.domain} · {formatDate(payload.meta.reportDate)}</span>
+        <span>{site.email} · {site.phoneDisplay}</span>
+      </div>
+    </section>
+
+    {dates.length > 1 && (
+      <nav class="report-dates no-print" aria-label="Previous reports">
+        <p class="eyebrow">Previous reports</p>
+        <div class="mt-3 flex flex-wrap gap-2">
+          {dates.map((item) => (
+            <a class={`report-date ${item.report_date === payload.meta.reportDate ? "is-current" : ""}`} href={`/reports/${payload.meta.domain}/${item.report_date}`}>
+              {navDate(item.report_date)} <span>{item.grade ?? "—"}</span>
+            </a>
+          ))}
+        </div>
+      </nav>
+    )}
+  </div>
+</article>
+
+<script>
+  const printButton = document.querySelector("[data-print-button]");
+  printButton?.addEventListener("click", () => window.print());
+
+  const copyButton = document.querySelector("[data-copy-link]");
+  copyButton?.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      const original = copyButton.textContent;
+      copyButton.textContent = "Copied";
+      setTimeout(() => {
+        copyButton.textContent = original;
+      }, 1600);
+    } catch {
+      // Clipboard access is optional.
+    }
+  });
+
+  document.querySelectorAll<HTMLDetailsElement>(".report-check").forEach((details) => {
+    if (window.location.search.includes("print=1")) details.open = true;
+  });
+
+  window.addEventListener("beforeprint", () => {
+    document.querySelectorAll<HTMLDetailsElement>("details").forEach((details) => {
+      details.open = true;
+    });
+  });
+</script>

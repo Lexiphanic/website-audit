@@ -1,0 +1,12 @@
+# Copy to .dev.vars for local development.
+#
+# With no TURNSTILE_SECRET, scans are accepted in development and rejected in
+# production. To exercise the widget locally, use the public Turnstile test keys:
+#   site key: 1x00000000000000000000AA
+#   secret:   1x0000000000000000000000000000000AA
+APP_ENV=development
+TURNSTILE_SECRET=
+
+# Optional. A free Google PageSpeed Insights API key adds Lighthouse scores and
+# Core Web Vitals field data. Without it, the report uses our own measurements.
+PSI_API_KEY=

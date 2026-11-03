@@ -1,0 +1,109 @@
+---
+interface Props {
+  domain: string;
+  date: string;
+  status: string;
+  phase: string;
+  progress: number;
+  error?: string | null;
+}
+
+const { domain, date, status, phase, progress, error } = Astro.props;
+
+const steps = [
+  ["dns", "DNS and domain"],
+  ["transport", "Transport and TLS"],
+  ["content", "Page and metadata"],
+  ["files", "Crawl and well-known files"],
+  ["security", "Security headers and email"],
+  ["performance", "Performance"],
+  ["migration", "Migration notes"],
+  ["tls-grade", "TLS grade"],
+  ["score", "Scoring"],
+  ["persist", "Saving the report"],
+];
+
+const currentIndex = Math.max(
+  steps.findIndex(([key]) => key === phase),
+  0,
+);
+const failed = status === "failed";
+const statusUrl = `/api/reports/${domain}/${date}/status`;
+---
+
+<section class="mx-auto w-[min(900px,100%-3rem)] pt-[clamp(7rem,12vw,10rem)] pb-24" data-audit-status data-url={statusUrl}>
+  <p class="eyebrow">Website migration audit</p>
+  <h1 class="mt-4 font-display text-[clamp(2rem,5vw,3.4rem)] leading-[1.05] font-semibold tracking-[-0.02em] text-cream">
+    {domain}
+  </h1>
+  <p class="mt-3 text-[0.95rem] text-muted">
+    {failed ? "The audit could not complete." : "The audit is running. This page updates itself."}
+  </p>
+
+  <div class="mt-8 rounded-[20px] border border-line bg-[rgba(36,22,54,0.35)] p-6">
+    <div class="flex items-center justify-between gap-4">
+      <span class="text-[0.72rem] font-semibold tracking-[0.14em] text-violet-300 uppercase">
+        {failed ? "Failed" : "In progress"}
+      </span>
+      <span class="text-[0.8rem] text-muted" data-progress-label>{progress}%</span>
+    </div>
+    <div class="mt-3 h-2 overflow-hidden rounded-full bg-[rgba(196,181,253,0.12)]">
+      <div class="h-full rounded-full bg-[linear-gradient(90deg,var(--color-violet-400),var(--color-violet-600))] transition-[width] duration-500" style={`width:${failed ? 100 : progress}%`} data-progress-bar></div>
+    </div>
+
+    {failed ? (
+      <div class="mt-6 rounded-xl border border-[rgba(251,113,133,0.35)] bg-[rgba(251,113,133,0.08)] p-4">
+        <p class="text-[0.88rem] text-bad-400">{error || "The audit failed before it could finish."}</p>
+        <a class="mt-3 inline-flex text-[0.84rem] text-violet-300 underline underline-offset-4" href={`/?url=${encodeURIComponent(domain)}#audit`}>Try again</a>
+      </div>
+    ) : (
+      <ol class="mt-6 grid gap-2">
+        {steps.map(([, label], index) => (
+          <li class={`flex items-center justify-between gap-4 rounded-lg border px-3 py-2 text-[0.85rem] ${index === currentIndex ? "border-violet-500/50 bg-violet-600/10 text-cream" : index < currentIndex ? "border-line text-muted" : "border-transparent text-muted/60"}`}>
+            <span>{label}</span>
+            <span class="text-[0.7rem]">{index < currentIndex || status === "complete" ? "Done" : index === currentIndex ? "Running" : "Waiting"}</span>
+          </li>
+        ))}
+      </ol>
+    )}
+  </div>
+
+  <p class="mt-5 text-[0.8rem] text-muted">
+    You can leave this page. The report will be at
+    <a class="text-violet-300 underline underline-offset-4" href={`/reports/${domain}/${date}`}>/reports/{domain}/{date}</a>.
+  </p>
+</section>
+
+<noscript>
+  <meta http-equiv="refresh" content="4" />
+</noscript>
+
+<script>
+  const root = document.querySelector<HTMLElement>("[data-audit-status]");
+  const statusUrl = root?.dataset.url ?? "";
+  const bar = document.querySelector<HTMLElement>("[data-progress-bar]");
+  const label = document.querySelector<HTMLElement>("[data-progress-label]");
+
+  async function poll() {
+    try {
+      const response = await fetch(statusUrl, { cache: "no-store" });
+      if (!response.ok) return;
+      const data = (await response.json()) as {
+        status: string;
+        progress: number;
+        phase: string;
+      };
+      if (data.status === "complete" || data.status === "failed") {
+        window.location.reload();
+        return;
+      }
+      if (bar) bar.style.width = `${data.progress}%`;
+      if (label) label.textContent = `${data.progress}%`;
+    } catch {
+      // Try again on the next tick.
+    }
+    window.setTimeout(poll, 2000);
+  }
+
+  window.setTimeout(poll, 1500);
+</script>

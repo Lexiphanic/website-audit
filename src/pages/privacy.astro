@@ -1,0 +1,30 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import { site } from "../lib/site";
+---
+
+<BaseLayout title="Privacy" description="How Lexiphanic Audit handles data." path="/privacy">
+  <main id="main" class="mx-auto w-[min(800px,100%-3rem)] pt-[clamp(7rem,12vw,10rem)] pb-24">
+    <p class="eyebrow">Privacy</p>
+    <h1 class="mt-4 font-display text-[clamp(2rem,5vw,3.2rem)] font-semibold text-cream">Privacy note</h1>
+    <div class="legal mt-8">
+      <p>Lexiphanic Audit is a public tool. It does not have accounts, newsletters, analytics or advertising cookies.</p>
+
+      <h2>What is stored</h2>
+      <p>When an audit runs, we store the domain, the date, the public findings and the report itself so the report URL keeps working. We do not store your name, email address or IP address as part of the report.</p>
+      <p>Reports are public at predictable addresses such as <span class="mono">/reports/example.com/2026-11-03</span>. They are marked <span class="mono">noindex</span> so search engines are asked not to index them, but anyone with the link can read them. Do not audit a site if the findings should not be public.</p>
+
+      <h2>Turnstile</h2>
+      <p>The scan form uses Cloudflare Turnstile to stop automated abuse. Turnstile may set a challenge cookie and makes a request to Cloudflare. It is not used for advertising or cross-site tracking.</p>
+
+      <h2>Server logs</h2>
+      <p>Cloudflare keeps operational request logs for the Worker, as it does for any site on its network. Those logs are used for reliability and abuse prevention, not for marketing profiles.</p>
+
+      <h2>Audited sites</h2>
+      <p>The audit fetches publicly accessible pages, headers, DNS records and the TLS certificate. It does not log in, submit forms, crawl the whole site or test for vulnerabilities. If you own a site and want a report removed, email <a href={`mailto:${site.email}`}>{site.email}</a>.</p>
+
+      <h2>Contact</h2>
+      <p>{site.legalName}, {site.address.street}, {site.address.locality}, {site.address.region}, {site.address.postcode}. Email <a href={`mailto:${site.email}`}>{site.email}</a>.</p>
+    </div>
+  </main>
+</BaseLayout>

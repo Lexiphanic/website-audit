@@ -1,0 +1,62 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "client-audit-lexiphanic-co-uk",
+  "main": "./src/worker.ts",
+  "compatibility_date": "2026-11-03",
+  "compatibility_flags": ["nodejs_compat"],
+  // Custom domain is attached in the Cloudflare dashboard. Keep the
+  // workers.dev and version-preview URLs off so the public surface stays
+  // exactly one hostname.
+  "workers_dev": false,
+  "preview_urls": false,
+  "observability": {
+    "enabled": true
+  },
+  // The audit is a durable multi-step job. Workflows gives us retries, sleeps
+  // and survival past the request that started it; D1 holds the report index.
+  "workflows": [
+    {
+      "name": "audit-workflow",
+      "binding": "AUDIT_WORKFLOW",
+      "class_name": "AuditWorkflow",
+      "default_retention": {
+        "success_retention": "1 day",
+        "error_retention": "7 days"
+      }
+    }
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "audit-lexiphanic-co-uk",
+      // Replace after `wrangler d1 create audit-lexiphanic-co-uk`.
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+  // Burst protection for the public scan endpoint. Turnstile is the primary
+  // bot check; this stops repeated submissions from the same location.
+  "ratelimits": [
+    {
+      "name": "SCAN_RATE",
+      "namespace_id": "1001",
+      "simple": {
+        "limit": 5,
+        "period": 60
+      }
+    }
+  ],
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "none"
+  },
+  "vars": {
+    "APP_ENV": "production",
+    // Create a Turnstile widget for audit.lexiphanic.co.uk and paste its site
+    // key here. With an empty value the form renders without a widget; the API
+    // refuses scans in production when TURNSTILE_SECRET is absent.
+    "TURNSTILE_SITE_KEY": "",
+    "TURNSTILE_HOSTNAMES": "audit.lexiphanic.co.uk"
+  }
+}

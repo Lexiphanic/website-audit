@@ -1,0 +1,33 @@
+{
+  "name": "client-audit-lexiphanic-co-uk",
+  "type": "module",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "bun@1.4.2",
+  "scripts": {
+    "dev": "astro dev",
+    "start": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "check": "astro check",
+    "db:migrate:local": "wrangler d1 migrations apply audit-lexiphanic-co-uk --local",
+    "db:migrate:remote": "wrangler d1 migrations apply audit-lexiphanic-co-uk --remote",
+    "astro": "astro"
+  },
+  "dependencies": {
+    "@astrojs/cloudflare": "^14.3.3",
+    "@tailwindcss/vite": "^4.3.3",
+    "astro": "^7",
+    "fast-xml-parser": "^5.2.5",
+    "ipaddr.js": "^2.2.0",
+    "linkedom": "^0.18.12",
+    "tailwindcss": "^4.3.3",
+    "tldts": "^7.0.11"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.10",
+    "@types/node": "^26.6.3",
+    "typescript": "^6",
+    "wrangler": "^4.144.0"
+  }
+}

@@ -1,0 +1,95 @@
+---
+import { site } from "../../lib/site";
+
+const nav = [
+  { href: "/#checks", label: "What we check" },
+  { href: "/reports/lexiphanic.co.uk", label: "Sample report" },
+  { href: "/#methodology", label: "Methodology" },
+  { href: "https://www.lexiphanic.co.uk/pricing", label: "Pricing" },
+];
+
+const normalizePath = (value: string) =>
+  value.replace(/index\.html$/, "").replace(/\.html$/, "").replace(/\/+$/, "") || "/";
+const isActive = (href: string) =>
+  href.startsWith("/") && normalizePath(Astro.url.pathname) === normalizePath(href);
+
+const navLink =
+  "relative transition-colors duration-[250ms] ease-brand hover:text-cream after:absolute after:-bottom-1.5 after:left-0 after:h-px after:w-full after:origin-right after:scale-x-0 after:bg-violet-400 after:transition-transform after:duration-[350ms] after:ease-brand after:content-[''] hover:after:origin-left hover:after:scale-x-100";
+---
+
+<header
+  id="site-header"
+  class="fixed inset-x-0 top-0 z-50 border-b border-transparent py-[1.1rem] transition-[background,border-color,backdrop-filter] duration-[400ms] ease-brand data-[scrolled]:border-line data-[scrolled]:bg-[rgba(18,10,28,0.72)] data-[scrolled]:backdrop-blur-[18px] data-[scrolled]:backdrop-saturate-[1.4] print:hidden"
+>
+  <div class="mx-auto flex w-[min(1200px,100%-3rem)] items-center justify-between gap-8">
+    <a
+      class="font-display text-[34px] leading-none font-bold tracking-[-0.02em] text-cream"
+      href="/"
+      aria-label={`${site.app.fullName} home`}
+    >
+      {site.name}<span class="ml-2 text-[0.58em] font-medium tracking-[0.12em] text-violet-300 align-middle">AUDIT</span>
+    </a>
+
+    <nav id="nav-links" class="nav-links" aria-label="Primary">
+      {
+        nav.map((item) => (
+          <a
+            class={`${navLink} ${isActive(item.href) ? "text-cream after:scale-x-100" : ""}`}
+            href={item.href}
+            aria-current={isActive(item.href) ? "page" : undefined}
+            rel={item.href.startsWith("http") ? "noopener noreferrer" : undefined}
+          >
+            {item.label}
+          </a>
+        ))
+      }
+    </nav>
+
+    <div class="flex items-center gap-[0.8rem]">
+      <a
+        class="nav-cta rounded-full border border-line-strong px-[1.35rem] py-[0.7rem] text-[0.85rem] font-medium text-cream transition-all duration-300 ease-brand hover:-translate-y-px hover:border-violet-600 hover:bg-violet-600"
+        href="/#audit">Audit a site</a
+      >
+      <button
+        class="nav-toggle h-[42px] w-[42px] place-items-center rounded-xl border border-line-strong"
+        id="nav-toggle"
+        aria-label="Toggle menu"
+        aria-expanded="false"
+        aria-controls="nav-links"
+      >
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path>
+        </svg>
+      </button>
+    </div>
+  </div>
+</header>
+
+<script>
+  const header = document.getElementById("site-header");
+  const onScroll = () => header?.toggleAttribute("data-scrolled", window.scrollY > 24);
+  onScroll();
+  window.addEventListener("scroll", onScroll, { passive: true });
+
+  const toggle = document.getElementById("nav-toggle");
+  const links = document.getElementById("nav-links");
+  const closeMenu = () => {
+    links?.classList.remove("is-open");
+    toggle?.setAttribute("aria-expanded", "false");
+  };
+  if (toggle && links) {
+    toggle.addEventListener("click", () => {
+      const open = links.classList.toggle("is-open");
+      toggle.setAttribute("aria-expanded", String(open));
+    });
+    links.addEventListener("click", (event) => {
+      if ((event.target as HTMLElement).closest("a")) closeMenu();
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && links.classList.contains("is-open")) {
+        closeMenu();
+        toggle.focus();
+      }
+    });
+  }
+</script>

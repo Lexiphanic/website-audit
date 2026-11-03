@@ -1,0 +1,23 @@
+# Lexiphanic Audit
+
+> A free website migration audit from Lexiphanic. Enter a domain and get a public, printable report covering HTTPS and certificates, www/apex redirects, metadata, HSTS, llms.txt, security.txt, well-known files, security headers, performance and migration readiness.
+
+## Main pages
+
+- [Audit a site](https://audit.lexiphanic.co.uk/): run a free audit and read what is checked.
+- [Privacy note](https://audit.lexiphanic.co.uk/privacy): what the tool stores and what it does not.
+- [Lexiphanic](https://www.lexiphanic.co.uk/): the main studio site.
+- [Pricing](https://www.lexiphanic.co.uk/pricing): setup and monthly pricing.
+- [Security](https://security.lexiphanic.co.uk/): responsible disclosure and advisories.
+
+## What the audit covers
+
+Transport and TLS, host canonicalisation, metadata and social tags, crawlability,
+well-known files, security headers and email authentication, performance, and
+migration readiness. Reports are public but marked noindex.
+
+## Notes
+
+- The audit fetches public pages only; it is not a penetration test.
+- PageSpeed Insights is optional. Without a key, Lighthouse and field Core Web Vitals are marked as not run.
+- HSTS preload list status comes from hstspreload.org; the header alone only requests inclusion.

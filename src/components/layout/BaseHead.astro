@@ -1,0 +1,97 @@
+---
+import { site, auditDescription } from "../../lib/site";
+
+interface Props {
+  title: string;
+  description?: string;
+  path?: string;
+  noindex?: boolean;
+  type?: string;
+  image?: string;
+}
+
+const {
+  title,
+  description = auditDescription,
+  path = "/",
+  noindex = false,
+  type = "website",
+  image = "/icons/apple-touch-icon-1024x1024.png",
+} = Astro.props;
+
+const canonicalPath = path === "/" ? "/" : path.replace(/\/+$/, "");
+const canonical = new URL(canonicalPath, site.app.url).href;
+const ogImage = new URL(image, site.app.url).href;
+const fullTitle = title.endsWith(site.app.fullName) ? title : `${title} — ${site.app.fullName}`;
+
+const jsonLd = {
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": `${site.url}/#business`,
+      name: site.legalName,
+      url: `${site.url}/`,
+      email: site.email,
+      telephone: site.phone,
+      address: {
+        "@type": "PostalAddress",
+        streetAddress: site.address.street,
+        addressLocality: site.address.locality,
+        addressRegion: site.address.region,
+        postalCode: site.address.postcode,
+        addressCountry: "GB",
+      },
+    },
+    {
+      "@type": "WebApplication",
+      "@id": `${site.app.url}/#audit`,
+      name: site.app.fullName,
+      url: `${site.app.url}/`,
+      description: auditDescription,
+      applicationCategory: "BusinessApplication",
+      operatingSystem: "Web",
+      offers: { "@type": "Offer", price: "0", priceCurrency: "GBP" },
+      provider: { "@id": `${site.url}/#business` },
+      inLanguage: "en-GB",
+    },
+  ],
+};
+---
+
+<title>{fullTitle}</title>
+<meta name="description" content={description} />
+<link rel="canonical" href={canonical} />
+<link rel="sitemap" type="application/xml" title="Sitemap" href="/sitemap.xml" />
+<meta name="robots" content={noindex ? "noindex, nofollow" : "index, follow, max-image-preview:large"} />
+<meta name="author" content={site.legalName} />
+<meta name="color-scheme" content="dark" />
+<meta name="theme-color" content="#7c3aed" />
+<meta name="application-name" content={site.app.fullName} />
+
+<link rel="preload" href="/fonts/exo2-latin.woff2" as="font" type="font/woff2" crossorigin="anonymous" />
+
+<link rel="icon" type="image/x-icon" href="/icons/favicon.ico" />
+<link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16x16.png" />
+<link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32x32.png" />
+<link rel="icon" type="image/png" sizes="48x48" href="/icons/favicon-48x48.png" />
+<link rel="manifest" href="/icons/manifest.webmanifest" />
+<link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon-180x180.png" />
+
+<meta property="og:type" content={type} />
+<meta property="og:site_name" content={site.app.fullName} />
+<meta property="og:title" content={fullTitle} />
+<meta property="og:description" content={description} />
+<meta property="og:url" content={canonical} />
+<meta property="og:locale" content="en_GB" />
+<meta property="og:image" content={ogImage} />
+<meta property="og:image:type" content="image/png" />
+<meta property="og:image:width" content="1024" />
+<meta property="og:image:height" content="1024" />
+
+<meta name="twitter:card" content="summary" />
+<meta name="twitter:title" content={fullTitle} />
+<meta name="twitter:description" content={description} />
+<meta name="twitter:image" content={ogImage} />
+
+{!noindex && <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />}

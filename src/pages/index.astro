@@ -1,0 +1,332 @@
+---
+import { env } from "cloudflare:workers";
+import BaseLayout from "../layouts/BaseLayout.astro";
+import { site, auditDescription } from "../lib/site";
+import { CATEGORIES } from "../lib/audit/types";
+import { CHECK_DEFINITIONS, checksForCategory } from "../lib/audit/registry";
+
+const siteKey = String(env.TURNSTILE_SITE_KEY ?? "");
+const production = String(env.APP_ENV) === "production";
+const error = Astro.url.searchParams.get("error") ?? "";
+const prefill = Astro.url.searchParams.get("url") ?? "";
+const totalChecks = CHECK_DEFINITIONS.length;
+
+const steps = [
+  {
+    number: "01",
+    title: "Enter the address",
+    body: "One domain is enough. We normalise it and audit the apex and www together, because that is where most migration surprises start.",
+  },
+  {
+    number: "02",
+    title: "We check the site",
+    body: "HTTPS and the certificate, redirects, metadata, HSTS, llms.txt, security.txt, well-known files, headers, email DNS and the rest.",
+  },
+  {
+    number: "03",
+    title: "Read the report",
+    body: "A shareable, printable report with the evidence, why each finding matters, and what we would do about it before the move.",
+  },
+];
+
+const faqs = [
+  {
+    q: "Is it really free?",
+    a: "Yes. It is a public tool, not a trial. There is no account and no card. We use it as the first conversation about a migration.",
+  },
+  {
+    q: "What do you actually check?",
+    a: "Around 90 signals across transport and TLS, host canonicalisation, metadata, crawlability, well-known files, security headers, performance and migration readiness. The full list is below.",
+  },
+  {
+    q: "Do you store the site or my details?",
+    a: "We store the domain, the date and the public findings so the report URL stays stable. We do not use analytics or advertising cookies. See the privacy note.",
+  },
+  {
+    q: "Why is a check marked “not checked”?",
+    a: "Some sites block automated requests, some checks need a working PageSpeed Insights key, and some files are optional. We say so rather than turning a missing signal into a failure.",
+  },
+];
+---
+
+<BaseLayout title="Website migration audit" description={auditDescription} path="/">
+  <main id="main">
+    <!-- Hero -->
+    <section id="audit" class="relative overflow-hidden pt-[clamp(8rem,14vw,11rem)] pb-[clamp(4rem,8vw,7rem)]">
+      <div class="mx-auto grid w-[min(1200px,100%-3rem)] grid-cols-1 items-start gap-[clamp(2.5rem,6vw,5rem)] min-[980px]:grid-cols-[1.15fr_0.85fr]">
+        <div>
+          <p class="eyebrow">Website migration audit</p>
+          <h1 class="mt-5 max-w-[18ch] font-display text-[clamp(2.6rem,6vw,4.6rem)] leading-[1.02] font-semibold tracking-[-0.03em] text-cream">
+            Is your site ready to <span class="text-violet-300">move?</span>
+          </h1>
+          <p class="mt-6 max-w-[48ch] text-[clamp(1rem,1.6vw,1.15rem)] leading-relaxed text-muted">
+            Enter any website. We check the things that decide whether a migration is clean or expensive:
+            HTTPS and the certificate, www and apex, metadata, HSTS, <span class="text-lilac-100">llms.txt</span>,
+            <span class="text-lilac-100">security.txt</span>, well-known files, headers and more.
+          </p>
+
+          <form method="post" action="/api/reports" class="mt-8" data-audit-form>
+            <div class="flex flex-col gap-3 rounded-[22px] border border-line-strong bg-[rgba(36,22,54,0.55)] p-2 shadow-[0_30px_90px_-40px_rgba(0,0,0,0.9)] backdrop-blur-[14px] min-[560px]:flex-row min-[560px]:items-center">
+              <label class="sr-only" for="url">Website address</label>
+              <input
+                id="url"
+                name="url"
+                type="text"
+                inputmode="url"
+                autocomplete="url"
+                required
+                value={prefill}
+                placeholder="example.com"
+                class="min-w-0 flex-1 bg-transparent px-4 py-3 text-[1rem] text-cream outline-none placeholder:text-muted/70"
+              />
+              <button
+                type="submit"
+                class="inline-flex items-center justify-center gap-2 rounded-[16px] bg-[linear-gradient(135deg,var(--color-violet-500),var(--color-violet-600))] px-6 py-3 text-[0.92rem] font-semibold text-white shadow-[0_12px_40px_-12px_rgba(124,58,237,0.85)] transition-all duration-300 ease-brand hover:-translate-y-0.5 hover:shadow-[0_20px_50px_-14px_rgba(139,92,246,0.95)]"
+              >
+                Audit this site
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+                </svg>
+              </button>
+            </div>
+
+            {siteKey ? (
+              <div class="mt-4 flex items-center gap-3">
+                <div class="cf-turnstile" data-sitekey={siteKey} data-action="audit" data-theme="dark" data-size="flexible"></div>
+              </div>
+            ) : (
+              <p class="mt-3 text-[0.8rem] text-muted">
+                {production
+                  ? "Turnstile is not configured, so scans are unavailable until the site key is set."
+                  : "Local development: Turnstile is skipped unless TURNSTILE_SECRET is set."}
+              </p>
+            )}
+
+            {error && (
+              <p class="mt-4 rounded-xl border border-[rgba(251,113,133,0.35)] bg-[rgba(251,113,133,0.08)] px-4 py-3 text-[0.88rem] text-bad-400" role="alert">
+                {error}
+              </p>
+            )}
+
+            <p class="mt-4 text-[0.78rem] text-muted">
+              Free · No account · Usually a minute · Reports are public but <span class="text-lilac-100">noindex</span>
+            </p>
+          </form>
+        </div>
+
+        <aside class="relative" aria-label="What the report covers">
+          <div class="window">
+            <div class="window-bar">
+              <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+              <span>audit.lexiphanic.co.uk/reports/example.com</span>
+            </div>
+            <div class="window-body">
+              <div class="flex items-start justify-between gap-4 border-b border-line pb-4">
+                <div>
+                  <p class="text-[0.66rem] font-semibold tracking-[0.18em] text-violet-300 uppercase">Migration audit</p>
+                  <p class="mt-1 font-display text-[1.4rem] font-semibold text-cream">example.com</p>
+                  <p class="mt-1 text-[0.72rem] text-muted">Checked 3 November 2026 · 110 of 144 scored checks ran</p>
+                </div>
+                <div class="grid h-[74px] w-[74px] shrink-0 place-items-center rounded-full border border-violet-400/40 bg-violet-600/15">
+                  <div class="text-center">
+                    <div class="font-display text-[1.7rem] leading-none font-semibold text-cream">B</div>
+                    <div class="text-[0.6rem] tracking-[0.12em] text-violet-300 uppercase">82</div>
+                  </div>
+                </div>
+              </div>
+              <div class="grid gap-2 pt-1">
+                {[
+                  ["Transport & TLS", "Certificate valid · HSTS on", "ok"],
+                  ["Hosts & redirects", "www duplicates the apex", "bad"],
+                  ["Metadata", "Open Graph image missing", "warn"],
+                  ["Well-known", "security.txt present", "ok"],
+                  ["AI readiness", "No llms.txt", "warn"],
+                ].map(([label, value, tone]) => (
+                  <div class="flex items-center justify-between gap-3 rounded-lg border border-line px-3 py-2">
+                    <span class="text-[0.74rem] text-lilac-100">{label}</span>
+                    <span class={`text-[0.68rem] ${tone === "ok" ? "text-ok-400" : tone === "bad" ? "text-bad-400" : "text-warn-400"}`}>{value}</span>
+                  </div>
+                ))}
+              </div>
+              <div class="mt-2 flex items-center justify-between border-t border-line pt-4 text-[0.7rem] text-muted">
+                <span>Printable · Shareable</span>
+                <span class="text-violet-300">Lexiphanic</span>
+              </div>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- Checks -->
+    <section id="checks" class="scroll-mt-28 border-t border-line bg-[rgba(18,10,28,0.4)] py-[clamp(4rem,8vw,6.5rem)]">
+      <div class="mx-auto w-[min(1200px,100%-3rem)]">
+        <div class="flex flex-wrap items-end justify-between gap-6">
+          <div class="max-w-[52ch]">
+            <p class="eyebrow">What we check</p>
+            <h2 class="mt-3 font-display text-[clamp(1.8rem,3.5vw,2.7rem)] leading-[1.1] font-semibold tracking-[-0.02em] text-cream">
+              {totalChecks} checks, grouped the way a migration actually fails.
+            </h2>
+            <p class="mt-4 text-[0.98rem] leading-relaxed text-muted">
+              Most checks are ours: we fetch the pages, read the headers, parse the HTML and do the TLS
+              handshake. We only call an outside service where a Worker genuinely cannot see the answer.
+            </p>
+          </div>
+          <a class="inline-flex items-center gap-2 rounded-full border border-line-strong px-5 py-2.5 text-[0.85rem] text-cream transition-all duration-300 ease-brand hover:border-violet-500 hover:bg-violet-600/20" href="/reports/lexiphanic.co.uk">
+            See a real report
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+            </svg>
+          </a>
+        </div>
+
+        <div class="mt-10 grid grid-cols-1 gap-4 min-[700px]:grid-cols-2 min-[1040px]:grid-cols-4">
+          {CATEGORIES.map((category, index) => (
+            <article class="card group flex flex-col rounded-[18px] border border-line bg-[rgba(36,22,54,0.35)] p-5 transition-all duration-300 ease-brand hover:-translate-y-1 hover:border-violet-500/50 hover:bg-[rgba(46,27,69,0.55)]" data-reveal>
+              <div class="flex items-center justify-between">
+                <span class="text-[0.68rem] font-semibold tracking-[0.16em] text-violet-300 uppercase">{String(index + 1).padStart(2, "0")}</span>
+                <span class="rounded-full border border-line px-2 py-0.5 text-[0.65rem] text-muted">{checksForCategory(category.key).length}</span>
+              </div>
+              <h3 class="mt-4 font-display text-[1.05rem] font-semibold text-cream">{category.label}</h3>
+              <p class="mt-2 flex-1 text-[0.84rem] leading-relaxed text-muted">{category.description}</p>
+              <span class="mt-4 text-[0.72rem] text-violet-300 opacity-0 transition-opacity duration-300 group-hover:opacity-100">Weighted {category.weight}%</span>
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
+
+    <!-- How it works -->
+    <section class="py-[clamp(4rem,8vw,6.5rem)]">
+      <div class="mx-auto w-[min(1200px,100%-3rem)]">
+        <p class="eyebrow">How it works</p>
+        <div class="mt-3 grid grid-cols-1 gap-8 min-[900px]:grid-cols-3">
+          {steps.map((step) => (
+            <article class="relative border-t border-line pt-6">
+              <span class="font-display text-[0.8rem] font-semibold tracking-[0.16em] text-violet-300">{step.number}</span>
+              <h2 class="mt-3 font-display text-[1.3rem] font-semibold text-cream">{step.title}</h2>
+              <p class="mt-3 text-[0.92rem] leading-relaxed text-muted">{step.body}</p>
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
+
+    <!-- Methodology -->
+    <section id="methodology" class="scroll-mt-28 border-t border-line bg-[rgba(18,10,28,0.45)] py-[clamp(4rem,8vw,6.5rem)]">
+      <div class="mx-auto grid w-[min(1200px,100%-3rem)] grid-cols-1 gap-[clamp(2.5rem,6vw,5rem)] min-[980px]:grid-cols-[0.9fr_1.1fr]">
+        <div>
+          <p class="eyebrow">Methodology</p>
+          <h2 class="mt-3 font-display text-[clamp(1.8rem,3.5vw,2.5rem)] leading-[1.1] font-semibold tracking-[-0.02em] text-cream">
+            A score you can take apart.
+          </h2>
+          <p class="mt-4 text-[0.96rem] leading-relaxed text-muted">
+            The overall score is a weighted average of eight categories. Individual checks are pass, warning,
+            fail or informational. Checks that do not apply — or that we could not run — are shown honestly and
+            excluded from the score.
+          </p>
+          <div class="mt-6 rounded-[18px] border border-line bg-[rgba(36,22,54,0.35)] p-5">
+            <p class="text-[0.72rem] font-semibold tracking-[0.16em] text-violet-300 uppercase">Grades</p>
+            <div class="mt-3 grid grid-cols-3 gap-2 text-[0.8rem] text-muted">
+              <span><b class="text-cream">A</b> 90–100</span>
+              <span><b class="text-cream">B</b> 80–89</span>
+              <span><b class="text-cream">C</b> 70–79</span>
+              <span><b class="text-cream">D</b> 60–69</span>
+              <span><b class="text-cream">E</b> 50–59</span>
+              <span><b class="text-cream">F</b> below 50</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="overflow-hidden rounded-[18px] border border-line">
+          <table class="w-full text-left text-[0.86rem]">
+            <thead class="bg-[rgba(46,27,69,0.6)] text-[0.68rem] tracking-[0.14em] text-violet-300 uppercase">
+              <tr>
+                <th class="px-4 py-3 font-semibold">Category</th>
+                <th class="px-4 py-3 font-semibold">Checks</th>
+                <th class="px-4 py-3 text-right font-semibold">Weight</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-[rgba(196,181,253,0.12)]">
+              {CATEGORIES.map((category) => (
+                <tr class="bg-[rgba(36,22,54,0.18)]">
+                  <td class="px-4 py-3 text-lilac-100">{category.label}</td>
+                  <td class="px-4 py-3 text-muted">{checksForCategory(category.key).length}</td>
+                  <td class="px-4 py-3 text-right text-cream">{category.weight}%</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="min-[980px]:col-start-2">
+          <div class="grid grid-cols-1 gap-3 min-[560px]:grid-cols-2">
+            {[
+              ["Pass", "The signal is present and sensible.", "ok"],
+              ["Warning", "Present, but weaker or incomplete.", "warn"],
+              ["Fail", "Missing or actively working against the site.", "bad"],
+              ["Not checked", "Blocked, not applicable, or no data.", "muted"],
+            ].map(([label, body, tone]) => (
+              <div class="rounded-xl border border-line bg-[rgba(36,22,54,0.25)] p-4">
+                <span class={`badge ${tone === "ok" ? "badge-ok" : tone === "warn" ? "badge-warn" : tone === "bad" ? "badge-bad" : "badge-muted"}`}>{label}</span>
+                <p class="mt-2 text-[0.82rem] leading-relaxed text-muted">{body}</p>
+              </div>
+            ))}
+          </div>
+          <p class="mt-4 text-[0.8rem] leading-relaxed text-muted">
+            This is a public-page health check, not a penetration test. We fetch a small sample of pages, do
+            not attempt to log in, and do not test for vulnerabilities.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- FAQ -->
+    <section class="py-[clamp(4rem,8vw,6.5rem)]">
+      <div class="mx-auto grid w-[min(1200px,100%-3rem)] grid-cols-1 gap-[clamp(2rem,5vw,4rem)] min-[900px]:grid-cols-[0.7fr_1.3fr]">
+        <div>
+          <p class="eyebrow">Questions</p>
+          <h2 class="mt-3 font-display text-[clamp(1.8rem,3.5vw,2.5rem)] leading-[1.1] font-semibold tracking-[-0.02em] text-cream">
+            The short answers.
+          </h2>
+          <p class="mt-4 text-[0.94rem] leading-relaxed text-muted">
+            Still unsure? Email <a class="text-violet-300 underline decoration-violet-400/40 underline-offset-4 hover:text-cream" href={`mailto:${site.email}`}>{site.email}</a>.
+          </p>
+        </div>
+        <div class="divide-y divide-[rgba(196,181,253,0.14)] border-t border-line">
+          {faqs.map((faq) => (
+            <details class="group py-5">
+              <summary class="flex cursor-pointer list-none items-center justify-between gap-4 text-[1rem] font-medium text-cream">
+                {faq.q}
+                <span class="text-violet-300 transition-transform duration-300 group-open:rotate-45">+</span>
+              </summary>
+              <p class="mt-3 max-w-[68ch] text-[0.9rem] leading-relaxed text-muted">{faq.a}</p>
+            </details>
+          ))}
+        </div>
+      </div>
+    </section>
+
+    <!-- Final CTA -->
+    <section class="border-t border-line pb-[clamp(4rem,8vw,6rem)] pt-[clamp(4rem,8vw,6rem)]">
+      <div class="mx-auto w-[min(1200px,100%-3rem)] rounded-[24px] border border-violet-500/30 bg-[radial-gradient(120%_150%_at_0%_0%,rgba(139,92,246,0.24),transparent_58%),linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.012))] p-[clamp(1.5rem,4vw,3rem)]">
+        <div class="flex flex-col items-start justify-between gap-6 min-[900px]:flex-row min-[900px]:items-center">
+          <div>
+            <p class="eyebrow">Ready when you are</p>
+            <h2 class="mt-3 max-w-[22ch] font-display text-[clamp(1.8rem,3.5vw,2.7rem)] leading-[1.08] font-semibold tracking-[-0.02em] text-cream">
+              Find out what the move will really take.
+            </h2>
+          </div>
+          <a class="inline-flex shrink-0 items-center gap-2 rounded-full bg-[linear-gradient(135deg,var(--color-violet-500),var(--color-violet-600))] px-7 py-3.5 text-[0.92rem] font-semibold text-white shadow-[0_12px_40px_-12px_rgba(124,58,237,0.85)] transition-all duration-300 ease-brand hover:-translate-y-0.5 hover:shadow-[0_20px_50px_-14px_rgba(139,92,246,0.95)]" href="#audit">
+            Audit a site
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+            </svg>
+          </a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  {siteKey && <script is:inline src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>}
+</BaseLayout>

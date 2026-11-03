@@ -1,0 +1,67 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import ReportView from "../../components/ReportView.astro";
+import ReportProgress from "../../components/ReportProgress.astro";
+import { loadReportPage } from "../../lib/report-page";
+import { formatDate } from "../../lib/util";
+
+export const prerender = false;
+
+const data = await loadReportPage(Astro.params.domain ?? "");
+const { domain, row, payload, dates, error } = data;
+
+Astro.response.headers.set("Referrer-Policy", "no-referrer");
+Astro.response.headers.set("X-Robots-Tag", "noindex, nofollow");
+if (error || !row) Astro.response.status = 404;
+
+const path = `/reports/${domain}`;
+---
+
+{error ? (
+  <BaseLayout title="Report not found" description="That address is not a public domain we can audit." path={path} noindex>
+    <main id="main" class="mx-auto w-[min(900px,100%-3rem)] pt-[clamp(7rem,12vw,10rem)] pb-24">
+      <p class="eyebrow">Not found</p>
+      <h1 class="mt-4 font-display text-[clamp(2rem,5vw,3.4rem)] font-semibold text-cream">That address does not look like a public domain.</h1>
+      <p class="mt-4 max-w-[60ch] text-[0.95rem] leading-relaxed text-muted">
+        Enter a domain such as <span class="text-lilac-100">example.com</span>. IP addresses, private hosts and unusual ports are not audited.
+      </p>
+      <a class="report-button mt-8 inline-flex" href="/#audit">Try another site</a>
+    </main>
+  </BaseLayout>
+) : !row ? (
+  <BaseLayout title={`No audit for ${domain}`} description={`No audit has been run for ${domain} yet.`} path={path} noindex>
+    <main id="main" class="mx-auto w-[min(900px,100%-3rem)] pt-[clamp(7rem,12vw,10rem)] pb-24">
+      <p class="eyebrow">No report yet</p>
+      <h1 class="mt-4 font-display text-[clamp(2rem,5vw,3.4rem)] font-semibold text-cream">{domain}</h1>
+      <p class="mt-4 max-w-[60ch] text-[0.95rem] leading-relaxed text-muted">
+        No audit has been run for this domain. It takes about a minute, and the report is public but noindex.
+      </p>
+      <a class="report-button mt-8 inline-flex" href={`/?url=${encodeURIComponent(domain)}#audit`}>Audit {domain}</a>
+
+      {dates.length > 0 && (
+        <div class="mt-12 border-t border-line pt-6">
+          <p class="eyebrow">Recent reports</p>
+          <div class="mt-3 flex flex-wrap gap-2">
+            {dates.map((item) => (
+              <a class="report-date" href={`/reports/${domain}/${item.report_date}`}>
+                {formatDate(item.report_date)} <span>{item.grade ?? "—"}</span>
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+    </main>
+  </BaseLayout>
+) : row.status !== "complete" || !payload ? (
+  <BaseLayout title={`Auditing ${domain}`} description={`The audit for ${domain} is running.`} path={path} noindex>
+    <main id="main">
+      <ReportProgress domain={domain} date={row.report_date} status={row.status} phase={row.phase} progress={row.progress} error={row.error} />
+    </main>
+  </BaseLayout>
+) : (
+  <BaseLayout title={`${domain} — website migration audit`} description={payload.summary.headline} path={path} noindex>
+    <main id="main" class="pt-[clamp(1.5rem,3vw,2.5rem)]">
+      <ReportView payload={payload} dates={dates} />
+    </main>
+  </BaseLayout>
+)}

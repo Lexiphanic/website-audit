@@ -1,0 +1,68 @@
+---
+import { site } from "../../lib/site";
+
+const year = new Date().getFullYear();
+const link = "text-muted text-[0.92rem] transition-colors duration-[250ms] ease-brand hover:text-cream";
+---
+
+<footer class="border-t border-line bg-[linear-gradient(180deg,transparent,rgba(124,58,237,0.07))] pt-[clamp(3.5rem,7vw,5.5rem)] pb-8 print:hidden">
+  <div class="mx-auto w-[min(1200px,100%-3rem)]">
+    <div class="grid grid-cols-1 gap-8 min-[720px]:grid-cols-2 min-[980px]:grid-cols-[1.4fr_repeat(3,minmax(0,1fr))] min-[980px]:gap-10">
+      <div class="min-[720px]:col-span-2 min-[980px]:col-span-1">
+        <a class="font-display text-[34px] leading-none font-bold tracking-[-0.02em] text-cream" href="/">
+          {site.name}<span class="ml-2 text-[0.58em] font-medium tracking-[0.12em] text-violet-300 align-middle">AUDIT</span>
+        </a>
+        <p class="mt-4 max-w-[22rem] text-[0.92rem] text-muted">
+          A free, evidence-based audit of the site you are thinking of moving to Lexiphanic.
+        </p>
+      </div>
+
+      <div>
+        <h4 class="mb-[1.1rem] text-[0.74rem] font-semibold tracking-[0.18em] text-violet-300 uppercase">Audit</h4>
+        <ul class="grid gap-[0.75rem]">
+          <li><a class={link} href="/#audit">Run an audit</a></li>
+          <li><a class={link} href="/#checks">What we check</a></li>
+          <li><a class={link} href="/reports/lexiphanic.co.uk">Sample report</a></li>
+          <li><a class={link} href="/#methodology">Methodology</a></li>
+        </ul>
+      </div>
+
+      <div>
+        <h4 class="mb-[1.1rem] text-[0.74rem] font-semibold tracking-[0.18em] text-violet-300 uppercase">Lexiphanic</h4>
+        <ul class="grid gap-[0.75rem]">
+          <li><a class={link} href={`${site.url}/`}>Main site</a></li>
+          <li><a class={link} href={`${site.url}/pricing`}>Pricing</a></li>
+          <li><a class={link} href={`${site.url}/contact`}>Contact</a></li>
+          <li><a class={link} href={`${site.url}/privacy`}>Privacy</a></li>
+          <li>
+            <a class="inline-flex items-center gap-[0.4rem] text-muted text-[0.92rem] transition-colors duration-[250ms] ease-brand hover:text-cream" href="https://security.lexiphanic.co.uk/" target="_blank" rel="noopener noreferrer">
+              Security
+              <svg class="h-[13px] w-[13px]" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M7 17 17 7M9 7h8v8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+              </svg>
+            </a>
+          </li>
+        </ul>
+      </div>
+
+      <div>
+        <h4 class="mb-[1.1rem] text-[0.74rem] font-semibold tracking-[0.18em] text-violet-300 uppercase">Contact</h4>
+        <ul class="grid gap-[0.75rem]">
+          <li><a class={link} href={`mailto:${site.email}`}>{site.email}</a></li>
+          <li><a class={link} href={`tel:${site.phone}`}>{site.phoneDisplay}</a></li>
+        </ul>
+        <address class="mt-[1.1rem] text-[0.92rem] leading-[1.75] text-muted not-italic">
+          {site.address.street}<br />
+          {site.address.locality}<br />
+          {site.address.region}, {site.address.postcode}<br />
+          United Kingdom
+        </address>
+      </div>
+    </div>
+
+    <div class="mt-[clamp(3rem,6vw,4.5rem)] flex flex-wrap items-center justify-between gap-4 border-t border-line pt-[1.8rem] text-[0.82rem] text-muted max-[720px]:flex-col max-[720px]:items-start">
+      <span>&copy; {year} {site.legalName}. All rights reserved.</span>
+      <span>Designed &amp; built in the UK.</span>
+    </div>
+  </div>
+</footer>

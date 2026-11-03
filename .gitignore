@@ -1,0 +1,18 @@
+# build output
+dist/
+.astro/
+
+# Cloudflare
+.wrangler/
+
+# dependencies
+node_modules/
+
+# local secrets
+.dev.vars
+
+# logs and editor files
+*.log
+.DS_Store
+.idea/
+.vscode/
