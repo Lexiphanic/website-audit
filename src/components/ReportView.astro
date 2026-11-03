@@ -6,10 +6,9 @@ import { site } from "../lib/site";
 
 interface Props {
   payload: ReportPayload;
-  dates?: { report_date: string; score: number | null; grade: string | null; status: string }[];
 }
 
-const { payload, dates = [] } = Astro.props;
+const { payload } = Astro.props;
 const facts = payload.facts;
 const transport = facts.transport;
 const dns = facts.dns;
@@ -52,10 +51,6 @@ function bytes(value: number): string {
   if (value < 1024) return `${value} B`;
   if (value < 1024 * 1024) return `${Math.round(value / 1024)} KB`;
   return `${(value / 1024 / 1024).toFixed(1)} MB`;
-}
-
-function navDate(value: string): string {
-  return value.slice(5);
 }
 
 const apexCert = transport?.tls.apex?.certificate ?? null;
@@ -491,19 +486,6 @@ const psi = performance?.psi;
         <span>{site.email} · {site.phoneDisplay}</span>
       </div>
     </section>
-
-    {dates.length > 1 && (
-      <nav class="report-dates no-print" aria-label="Previous reports">
-        <p class="eyebrow">Previous reports</p>
-        <div class="mt-3 flex flex-wrap gap-2">
-          {dates.map((item) => (
-            <a class={`report-date ${item.report_date === payload.meta.reportDate ? "is-current" : ""}`} href={`/reports/${payload.meta.domain}/${item.report_date}`}>
-              {navDate(item.report_date)} <span>{item.grade ?? "—"}</span>
-            </a>
-          ))}
-        </div>
-      </nav>
-    )}
   </div>
 </article>
 

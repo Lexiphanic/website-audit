@@ -16,15 +16,16 @@ be saved as a PDF from the browser.
 | --- | --- |
 | `/` | The public landing page and audit form. |
 | `/reports/{domain}` | The latest report for that domain. |
-| `/reports/{domain}/{YYYY-MM-DD}` | The report for that day. |
 | `/api/reports` | `POST` a scan (`url`, Turnstile token). |
-| `/api/reports/{domain}/{date}/status` | Small JSON status payload for polling. |
-| `/api/reports/{domain}/{date}` | The stored report as JSON. |
+| `/api/reports/{domain}/status` | Small JSON status payload for polling. |
+| `/api/reports/{domain}` | The stored report as JSON. |
 | `/health` | D1 health check for an external monitor. |
 
-A same-day re-run updates that day's report. Report pages are `noindex`,
-`no-referrer` and public; the landing page is indexable. `robots.txt` does not
-disallow `/reports/` so crawlers can see the noindex rather than guessing.
+A re-run replaces the domain's stored report; the date the report was generated
+is kept in `report_date` and shown in the report. Old dated links from the first
+version redirect to the latest report. Report pages are `noindex`, `no-referrer`
+and public; the landing page is indexable. `robots.txt` does not disallow
+`/reports/` so crawlers can see the noindex rather than guessing.
 
 ## Stack
 
@@ -154,19 +155,21 @@ one day on success and seven days on error; the report itself lives in D1.
 
 ## Data
 
-`migrations/0001_init.sql` creates one table:
+`migrations/0001_init.sql` creates the first version of the table;
+`migrations/0002_latest_only.sql` rebuilds it to one row per domain:
 
 ```sql
 reports (
-  id, domain, report_date, url, status, phase, progress,
+  domain, report_date, url, status, phase, progress,
   score, grade, payload_json, workflow_id, error, created_at, updated_at
 )
 ```
 
-One row per domain per day. `payload_json` holds the report and is capped below
-D1's 100 KB statement limit; labels, "why it matters" and "the fix" live in
-`src/lib/audit/registry.ts` so the stored payload only carries results and short
-evidence.
+`report_date` is the date the report was generated, kept for display; it is no
+longer part of the URL or the uniqueness key. `payload_json` holds the report and
+is capped below D1's 100 KB statement limit; labels, "why it matters" and "the
+fix" live in `src/lib/audit/registry.ts` so the stored payload only carries
+results and short evidence.
 
 There are no users, no accounts, no analytics and no cookies. The only
 third-party request on the landing page is Turnstile. See `/privacy`.

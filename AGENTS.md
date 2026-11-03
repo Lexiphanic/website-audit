@@ -39,8 +39,9 @@ no test or lint script; do not invent one.
   DNS → transport/TLS → content → files → security → performance → migration →
   TLS polling → score → persist. Each step has retries; a phase that still fails
   returns a fallback so the report completes with "not checked" checks.
-- **D1** (`DB`) stores one row per domain per day in `reports`. The full report
-  is JSON in `payload_json`, capped below D1's 100 KB statement limit.
+- **D1** (`DB`) stores one row per domain in `reports`. The full report is JSON
+  in `payload_json`, capped below D1's 100 KB statement limit. `report_date` is
+  the date the report was generated and is not part of the URL or uniqueness key.
 - **Rate Limiting** (`SCAN_RATE`) is burst protection around the public scan
   endpoint.
 - **Turnstile** verifies the scan form in production.
@@ -68,14 +69,11 @@ no test or lint script; do not invent one.
 
 ## URL policy
 
-`trailingSlash: "never"`. The report routes are:
-
-- `/reports/[domain]` → latest
-- `/reports/[domain]/[date]` → that day
-
-Dates are `YYYY-MM-DD` in `Europe/London`. Domains are normalised to the
-registrable domain (strip `www`, path, query and non-standard ports). A same-day
-re-run updates the existing row; the URL stays stable.
+`trailingSlash: "never"`. The report route is `/reports/[domain]`, which shows
+the latest report. Domains are normalised to the registrable domain (strip
+`www`, path, query and non-standard ports). A re-run replaces the domain's
+stored report; the generated date is kept in `report_date` for display. Old
+dated links redirect to `/reports/[domain]`.
 
 Report pages set `X-Robots-Tag: noindex` and `Referrer-Policy: no-referrer` in
 middleware. `robots.txt` does **not** disallow `/reports/`: crawlers need to see
@@ -94,6 +92,8 @@ the noindex. The landing page is indexable.
 - **crt.sh is flaky.** It is a fallback for the certificate, not the only source.
 - **D1's statement limit is 100 KB.** `buildReport` trims evidence and then
   large fact arrays. Keep `MAX_PAYLOAD_BYTES` in `score.ts` below 100 KB.
+- **One row per domain.** `0002_latest_only.sql` rebuilds the table with
+  `domain` as the primary key; do not reintroduce a date dimension or history.
 - **Workflow step output limit is 1 MB.** Do not return raw HTML from a step;
   parse it inside the step.
 - **Secrets are optional in `wrangler.jsonc`.** `TURNSTILE_SECRET` and

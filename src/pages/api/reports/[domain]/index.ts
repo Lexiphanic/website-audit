@@ -1,8 +1,7 @@
 import type { APIRoute } from "astro";
 import { env } from "cloudflare:workers";
-import { domainFromParam } from "../../../../../lib/audit/normalize";
-import { getReport } from "../../../../../lib/db";
-import { isDateString } from "../../../../../lib/util";
+import { domainFromParam } from "../../../../lib/audit/normalize";
+import { getReport } from "../../../../lib/db";
 
 export const prerender = false;
 
@@ -11,13 +10,9 @@ export const GET: APIRoute = async ({ params }) => {
   const headers = { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" };
   try {
     const domain = domainFromParam(params.domain ?? "");
-    const date = params.date ?? "";
-    if (!isDateString(date)) {
-      return new Response(JSON.stringify({ error: "Invalid date" }), { status: 400, headers });
-    }
-    const row = await getReport(env, domain, date);
+    const row = await getReport(env, domain);
     if (!row) {
-      return new Response(JSON.stringify({ error: "No report for that date" }), { status: 404, headers });
+      return new Response(JSON.stringify({ error: "No report for that domain" }), { status: 404, headers });
     }
     if (row.status !== "complete" || !row.payload_json) {
       return new Response(

@@ -1,35 +1,24 @@
 import { env } from "cloudflare:workers";
 import { domainFromParam } from "./audit/normalize";
-import { getReport, getReportDates, type ReportRow } from "./db";
-import { isDateString } from "./util";
+import { getReport, type ReportRow } from "./db";
 import type { ReportPayload } from "./audit/types";
 
 export interface ReportPageData {
   domain: string;
-  date: string;
   row: ReportRow | null;
   payload: ReportPayload | null;
-  dates: Pick<ReportRow, "report_date" | "score" | "grade" | "status">[];
-  error: "invalid-domain" | "invalid-date" | "invalid-report" | null;
+  error: "invalid-domain" | "invalid-report" | null;
 }
 
-export async function loadReportPage(rawDomain: string, rawDate = ""): Promise<ReportPageData> {
-  const empty = { date: rawDate, row: null, payload: null, dates: [] as ReportPageData["dates"], error: null } as const;
+export async function loadReportPage(rawDomain: string): Promise<ReportPageData> {
   let domain: string;
   try {
     domain = domainFromParam(rawDomain);
   } catch {
-    return { ...empty, domain: rawDomain, error: "invalid-domain" };
+    return { domain: rawDomain, row: null, payload: null, error: "invalid-domain" };
   }
 
-  if (rawDate && !isDateString(rawDate)) {
-    return { ...empty, domain, error: "invalid-date" };
-  }
-
-  const [row, dates] = await Promise.all([
-    getReport(env, domain, rawDate || undefined),
-    getReportDates(env, domain),
-  ]);
+  const row = await getReport(env, domain);
 
   let payload: ReportPayload | null = null;
   if (row?.status === "complete" && row.payload_json) {
@@ -41,8 +30,8 @@ export async function loadReportPage(rawDomain: string, rawDate = ""): Promise<R
   }
 
   if (row?.status === "complete" && !payload) {
-    return { domain, date: rawDate, row, payload: null, dates, error: "invalid-report" };
+    return { domain, row, payload: null, error: "invalid-report" };
   }
 
-  return { domain, date: rawDate, row, payload, dates, error: null };
+  return { domain, row, payload, error: null };
 }

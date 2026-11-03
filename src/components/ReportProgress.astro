@@ -1,14 +1,13 @@
 ---
 interface Props {
   domain: string;
-  date: string;
   status: string;
   phase: string;
   progress: number;
   error?: string | null;
 }
 
-const { domain, date, status, phase, progress, error } = Astro.props;
+const { domain, status, phase, progress, error } = Astro.props;
 
 const steps = [
   ["dns", "DNS and domain"],
@@ -28,7 +27,7 @@ const currentIndex = Math.max(
   0,
 );
 const failed = status === "failed";
-const statusUrl = `/api/reports/${domain}/${date}/status`;
+const statusUrl = `/api/reports/${domain}/status`;
 ---
 
 <section class="mx-auto w-[min(900px,100%-3rem)] pt-[clamp(7rem,12vw,10rem)] pb-24" data-audit-status data-url={statusUrl}>
@@ -70,7 +69,7 @@ const statusUrl = `/api/reports/${domain}/${date}/status`;
 
   <p class="mt-5 text-[0.8rem] text-muted">
     You can leave this page. The report will be at
-    <a class="text-violet-300 underline underline-offset-4" href={`/reports/${domain}/${date}`}>/reports/{domain}/{date}</a>.
+    <a class="text-violet-300 underline underline-offset-4" href={`/reports/${domain}`}>/reports/{domain}</a>.
   </p>
 </section>
 

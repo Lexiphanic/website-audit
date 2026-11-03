@@ -2,7 +2,7 @@ export function nowIso(): string {
   return new Date().toISOString();
 }
 
-/** YYYY-MM-DD in the UK, which is the date used in report URLs. */
+/** YYYY-MM-DD in the UK, stored with a report to record when it was generated. */
 export function ukDate(at: Date = new Date()): string {
   const parts = new Intl.DateTimeFormat("en-GB", {
     timeZone: "Europe/London",

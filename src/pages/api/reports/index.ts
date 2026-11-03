@@ -1,6 +1,6 @@
 import type { APIRoute } from "astro";
 import { env } from "cloudflare:workers";
-import { normalizeTarget, reportId, reportPath } from "../../../lib/audit/normalize";
+import { normalizeTarget, reportPath } from "../../../lib/audit/normalize";
 import { hasFreshReport, queueReport, failReport, setWorkflowId } from "../../../lib/db";
 import { ukDate } from "../../../lib/util";
 import { clientIp, verifyTurnstile } from "../../../lib/turnstile";
@@ -74,22 +74,20 @@ export const POST: APIRoute = async ({ request, redirect }) => {
     return respond(error instanceof Error ? error.message : "Enter a valid website address.");
   }
 
-  const date = ukDate();
-  const id = reportId(target.domain, date);
-  const reportUrl = reportPath(target.domain, date);
+  const reportUrl = reportPath(target.domain);
 
   try {
     if (!refresh) {
-      const existing = await hasFreshReport(env, target.domain, date, 5);
+      const existing = await hasFreshReport(env, target.domain, 5);
       if (existing && existing.status !== "failed") {
         return wantsJson
-          ? Response.json({ domain: target.domain, date, reportUrl, status: existing.status }, { status: 202 })
+          ? Response.json({ domain: target.domain, reportUrl, status: existing.status }, { status: 202 })
           : redirect(reportUrl, 303);
       }
     }
 
+    const date = ukDate();
     await queueReport(env, {
-      id,
       domain: target.domain,
       date,
       url: `https://${target.domain}/`,
@@ -97,20 +95,19 @@ export const POST: APIRoute = async ({ request, redirect }) => {
 
     const instance = await env.AUDIT_WORKFLOW.create({
       params: {
-        id,
         domain: target.domain,
         url: `https://${target.domain}/`,
         reportDate: date,
       },
     });
-    await setWorkflowId(env, id, instance.id);
+    await setWorkflowId(env, target.domain, instance.id);
 
     return wantsJson
-      ? Response.json({ domain: target.domain, date, reportUrl }, { status: 202 })
+      ? Response.json({ domain: target.domain, reportUrl }, { status: 202 })
       : redirect(reportUrl, 303);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    await failReport(env, id, message).catch(() => undefined);
+    await failReport(env, target.domain, message).catch(() => undefined);
     return respond(`The audit could not be started: ${message}`, 500);
   }
 };

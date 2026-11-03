@@ -68,10 +68,6 @@ export function domainFromParam(value: string): string {
   return parsed.domain.toLowerCase();
 }
 
-export function reportId(domain: string, date: string): string {
-  return `${domain}:${date}`;
-}
-
-export function reportPath(domain: string, date?: string): string {
-  return date ? `/reports/${domain}/${date}` : `/reports/${domain}`;
+export function reportPath(domain: string): string {
+  return `/reports/${domain}`;
 }

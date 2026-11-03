@@ -24,7 +24,6 @@ import type {
 } from "../audit/types";
 
 export interface AuditParams {
-  id: string;
   domain: string;
   url: string;
   reportDate: string;
@@ -59,7 +58,7 @@ const STEP_CONFIG = {
 export class AuditWorkflow extends WorkflowEntrypoint<Env, AuditParams> {
   async run(event: WorkflowEvent<AuditParams>, step: WorkflowStep): Promise<void> {
     const started = Date.now();
-    const { id, domain, url, reportDate } = event.payload;
+    const { domain, url, reportDate } = event.payload;
 
     const facts: AuditFacts = {
       domain,
@@ -78,7 +77,7 @@ export class AuditWorkflow extends WorkflowEntrypoint<Env, AuditParams> {
 
     const progress = async (phase: string, value: number) => {
       try {
-        await updateProgress(this.env, id, phase, value);
+        await updateProgress(this.env, domain, phase, value);
       } catch {
         // A status write must never fail the audit.
       }
@@ -173,14 +172,14 @@ export class AuditWorkflow extends WorkflowEntrypoint<Env, AuditParams> {
       await step.do("persist", STEP_CONFIG, async () => {
         await completeReport(
           this.env,
-          id,
+          domain,
           JSON.stringify(payload),
           payload.meta.score,
           payload.meta.grade,
         );
       });
     } catch (error) {
-      await failReport(this.env, id, asErrorMessage(error));
+      await failReport(this.env, domain, asErrorMessage(error));
       throw error;
     }
   }
