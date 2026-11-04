@@ -186,7 +186,32 @@ export async function collectHtml(
   status: number,
   headers: Record<string, string> = {},
 ): Promise<HtmlFacts> {
-  const { document } = parseHTML(html);
+  const contentType = headers["content-type"] ?? "";
+  const prefix = html.slice(0, 300).toLowerCase();
+  if (status >= 400) {
+    throw new Error(`Homepage returned ${status}`);
+  }
+  if (!html.trim()) {
+    throw new Error("Homepage returned an empty body");
+  }
+  if (
+    !contentType.includes("html") &&
+    !prefix.includes("<!doctype") &&
+    !prefix.includes("<html") &&
+    !prefix.includes("<head")
+  ) {
+    throw new Error(`Homepage did not return HTML (${contentType || "unknown content type"})`);
+  }
+
+  let document: Document;
+  try {
+    ({ document } = parseHTML(html));
+  } catch {
+    throw new Error("Homepage HTML could not be parsed");
+  }
+  if (!document.documentElement) {
+    throw new Error("Homepage HTML had no document element");
+  }
   const meta = metaMap(document);
   const base = new URL(finalUrl);
 
