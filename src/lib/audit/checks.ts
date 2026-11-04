@@ -389,8 +389,18 @@ export function redirectChecks(facts: AuditFacts): CheckResult[] {
 
   if (t.indexProbe.error) {
     results.push(skip("index-html", "Could not test /index.html"));
-  } else if (t.indexProbe.status >= 300 && t.indexProbe.status < 400) {
-    results.push(pass("index-html", `${t.indexProbe.status} to ${t.indexProbe.location}`));
+  } else if (t.indexProbe.hops[0]?.status >= 300 && t.indexProbe.hops[0]?.status < 400) {
+    let finalPath = "";
+    try {
+      finalPath = new URL(t.indexProbe.finalUrl).pathname;
+    } catch {
+      finalPath = "";
+    }
+    results.push(
+      finalPath === "/"
+        ? pass("index-html", "Redirects to /")
+        : warn("index-html", `Redirects to ${t.indexProbe.finalUrl}`),
+    );
   } else if (t.indexProbe.status === 404 || t.indexProbe.status === 410) {
     results.push(pass("index-html", "/index.html is not served"));
   } else if (t.indexProbe.status === 200) {
@@ -863,7 +873,13 @@ export function securityChecks(facts: AuditFacts): CheckResult[] {
   );
 
   results.push(s.legal.privacy ? pass("privacy-page", "Privacy notice found") : fail("privacy-page", "No privacy notice found"));
-  results.push(s.legal.cookies ? pass("cookie-page", "Cookie notice found") : warn("cookie-page", "No cookie notice found"));
+  results.push(
+    s.legal.cookies
+      ? pass("cookie-page", "Cookie notice found")
+      : s.cookies.length === 0 && s.trackers.length === 0
+        ? pass("cookie-page", "No cookies or trackers on the homepage")
+        : warn("cookie-page", "No cookie notice found"),
+  );
   results.push(s.legal.terms ? pass("terms-page", "Terms found") : info("terms-page", "No terms page found"));
   results.push(s.legal.accessibility ? pass("accessibility-page", "Accessibility statement found") : info("accessibility-page", "No accessibility statement found"));
 
