@@ -136,7 +136,9 @@ the noindex. The landing page is indexable.
   OCSP responder, so OCSP stapling is informational. Compression is probed with
   a separate `Accept-Encoding` request; Cloudflare may still decompress the
   response and drop the header, so the check falls back to PageSpeed. The HTML
-  fetch itself stays uncompressed so the parser sees text.
+  fetch itself stays uncompressed so the parser sees text. HSTS preload and CSP
+  reporting are optional: preload is only checked when the header requests it,
+  and a missing CSP report endpoint is informational.
 - **Public scan safety.** Keep the SSRF guard (`src/lib/audit/ssrf.ts`) on every
   request and redirect. Do not add features that scan private hosts, log in,
   submit forms or test for vulnerabilities.

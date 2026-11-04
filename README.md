@@ -309,6 +309,11 @@ Edge's **Print → Save as PDF**; the in-page button calls `window.print()`.
 - OCSP stapling is informational. Some CAs, including Google Trust Services,
   publish CRLs but no OCSP responder, so there is nothing to staple even though
   the certificate is valid.
+- HSTS preload is optional. The list-status check only runs when the header
+  requests `preload`; a header without it is informational. Preload needs a
+  max-age of at least one year, so a shorter max-age cannot be submitted.
+- CSP reporting is optional. A policy without `report-uri`/`report-to` is
+  informational; add an endpoint when you want to collect violation reports.
 - Registries differ in what they expose over RDAP. `.uk` does not publish a
   transfer-lock status, so that check is marked "not checked" rather than a
   warning.
