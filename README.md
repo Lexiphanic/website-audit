@@ -227,10 +227,9 @@ C 70+, D 60+, E 50+, F below 50.
   IP literals, credentials, unusual ports and blocked hostnames.
 - Every redirect is re-checked before it is followed.
 - Bodies are capped, timeouts are set, and no cookies or auth headers are sent.
-- The scanner sends a browser-compatible User-Agent with an explicit
-  `LexiphanicAudit/1.0` token plus `From` and `X-Audit` headers. It does not
-  attempt to evade blocks; if a site still blocks it, the report says so. It
-  fetches a small public sample; it is not a penetration test.
+- The scanner uses a standard browser User-Agent and no audit-specific headers.
+  It does not attempt to evade blocks; if a site still blocks it, the report
+  says so. It fetches a small public sample; it is not a penetration test.
 - Reports are public but noindex; staff notes do not exist in this project.
 
 ## Design

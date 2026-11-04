@@ -3,12 +3,9 @@ import { sha256 } from "../util";
 import type { RedirectHop, RedirectProbe } from "./types";
 
 export const USER_AGENT =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36 LexiphanicAudit/1.0";
-export const AUDIT_CONTACT = "hello@lexiphanic.co.uk";
-const AUDIT_HEADERS = {
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36";
+const BROWSER_HEADERS = {
   "user-agent": USER_AGENT,
-  from: AUDIT_CONTACT,
-  "x-audit": "LexiphanicAudit/1.0 (+https://audit.lexiphanic.co.uk/)",
 };
 
 export interface FetchOptions {
@@ -94,7 +91,7 @@ export async function fetchText(url: string, options: FetchOptions = {}): Promis
     redirect: "manual",
     signal: AbortSignal.timeout(timeoutMs),
     headers: {
-      ...AUDIT_HEADERS,
+      ...BROWSER_HEADERS,
       accept: "text/html,application/xhtml+xml,application/xml;q=0.9,text/plain;q=0.8,*/*;q=0.5",
       "accept-language": "en-GB,en;q=0.9",
       ...options.headers,
@@ -209,7 +206,7 @@ export async function fetchJson<T>(
   const response = await fetch(url, {
     signal: AbortSignal.timeout(options.timeoutMs ?? 10_000),
     headers: {
-      ...AUDIT_HEADERS,
+      ...BROWSER_HEADERS,
       accept: "application/json",
       ...options.headers,
     },
@@ -258,7 +255,7 @@ export async function fetchBytes(
       redirect: "manual",
       signal: AbortSignal.timeout(options.timeoutMs ?? 8000),
       headers: {
-        ...AUDIT_HEADERS,
+        ...BROWSER_HEADERS,
         accept: "image/avif,image/webp,image/png,image/jpeg,image/gif,image/svg+xml,*/*;q=0.5",
       },
     });
