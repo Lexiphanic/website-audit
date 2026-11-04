@@ -295,7 +295,7 @@ export function transportChecks(facts: AuditFacts): CheckResult[] {
       ? skip("tls-ocsp-stapling", "OCSP stapling not reported")
       : stapling
         ? pass("tls-ocsp-stapling", "Stapling is enabled")
-        : warn("tls-ocsp-stapling", "Stapling is not enabled"),
+        : info("tls-ocsp-stapling", "Not stapled; the CA may publish CRLs instead"),
   );
 
   const fs = t.tls.apex?.forwardSecrecy;

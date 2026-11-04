@@ -278,6 +278,7 @@ export async function collectHtml(
         integrity: script.getAttribute("integrity") ?? "",
         async: script.hasAttribute("async"),
         defer: script.hasAttribute("defer"),
+        module: (script.getAttribute("type") ?? "").toLowerCase() === "module",
         thirdParty,
       };
     })

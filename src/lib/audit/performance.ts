@@ -35,6 +35,24 @@ async function headBytes(url: string): Promise<number> {
   }
 }
 
+/**
+ * The HTML fetch does not advertise compression, so its response is
+ * uncompressed. Ask once more with a browser-like `Accept-Encoding` and read
+ * only the headers; that is the answer a browser would actually receive.
+ */
+async function contentEncodingFor(url: string, fallback: string): Promise<string> {
+  try {
+    const result = await fetchText(url, {
+      timeoutMs: 5000,
+      maxBytes: 0,
+      headers: { "accept-encoding": "br, gzip, zstd" },
+    });
+    return result.headers["content-encoding"] || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 async function fontDisplay(html: HtmlFacts, transport: TransportFacts): Promise<string> {
   const cssUrls = html.stylesheets.slice(0, 3).map((href) => absolute(href, transport.homepage.finalUrl)).filter(Boolean);
   const bodies: string[] = [];
@@ -193,9 +211,12 @@ export async function collectPerformance(
   psiApiKey?: string,
 ): Promise<PerformanceFacts> {
   const headers = transport.homepage.headers;
+  // Module scripts are deferred by default, so they do not block first paint.
   const renderBlockingUrls = [
     ...html.stylesheets,
-    ...html.scripts.filter((script) => !script.async && !script.defer).map((script) => script.src),
+    ...html.scripts
+      .filter((script) => !script.async && !script.defer && !script.module)
+      .map((script) => script.src),
   ].filter(Boolean);
 
   const assetUrls = [
@@ -238,10 +259,15 @@ export async function collectPerformance(
     }
   }
 
+  const contentEncoding = await contentEncodingFor(
+    transport.homepage.finalUrl,
+    transport.homepage.contentEncoding,
+  );
+
   return {
     ttfbMs: transport.homepage.ttfbMs,
     htmlBytes: transport.homepage.htmlBytes,
-    contentEncoding: transport.homepage.contentEncoding,
+    contentEncoding,
     renderBlocking: renderBlockingUrls.length,
     renderBlockingUrls: renderBlockingUrls.slice(0, 10),
     assetBytes: assetBytes.reduce((total, value) => total + value, 0),

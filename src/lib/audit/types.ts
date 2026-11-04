@@ -273,6 +273,7 @@ export interface HtmlScriptFact {
   integrity: string;
   async: boolean;
   defer: boolean;
+  module: boolean;
   thirdParty: boolean;
 }
 
