@@ -38,7 +38,9 @@ async function headBytes(url: string): Promise<number> {
 /**
  * The HTML fetch does not advertise compression, so its response is
  * uncompressed. Ask once more with a browser-like `Accept-Encoding` and read
- * only the headers; that is the answer a browser would actually receive.
+ * only the headers. Cloudflare's runtime may still decompress the response and
+ * drop `content-encoding`; the compression check therefore falls back to
+ * PageSpeed's `uses-text-compression` audit when this is empty.
  */
 async function contentEncodingFor(url: string, fallback: string): Promise<string> {
   try {
@@ -133,6 +135,7 @@ async function collectPsi(domain: string, apiKey: string): Promise<PsiFacts | nu
         accessibility: null,
         bestPractices: null,
         seo: null,
+        compression: null,
         lcp: "—",
         cls: "—",
         inp: "—",
@@ -146,7 +149,7 @@ async function collectPsi(domain: string, apiKey: string): Promise<PsiFacts | nu
     const data = (await response.json()) as {
       lighthouseResult?: {
         categories?: Record<string, { score?: number }>;
-        audits?: Record<string, { displayValue?: string; numericValue?: number }>;
+        audits?: Record<string, { displayValue?: string; numericValue?: number; score?: number }>;
       };
       loadingExperience?: {
         metrics?: Record<string, { category?: string; percentile?: number }>;
@@ -177,6 +180,10 @@ async function collectPsi(domain: string, apiKey: string): Promise<PsiFacts | nu
       accessibility: score("accessibility"),
       bestPractices: score("best-practices"),
       seo: score("seo"),
+      compression: (() => {
+        const compression = audits["uses-text-compression"]?.score;
+        return typeof compression === "number" ? compression >= 1 : null;
+      })(),
       lcp: psiNumber(audits, "largest-contentful-paint"),
       cls: psiNumber(audits, "cumulative-layout-shift"),
       inp: psiNumber(audits, "interaction-to-next-paint"),
@@ -191,6 +198,7 @@ async function collectPsi(domain: string, apiKey: string): Promise<PsiFacts | nu
       accessibility: null,
       bestPractices: null,
       seo: null,
+      compression: null,
       lcp: "—",
       cls: "—",
       inp: "—",

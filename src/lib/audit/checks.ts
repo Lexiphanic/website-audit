@@ -1026,7 +1026,16 @@ export function performanceChecks(facts: AuditFacts): CheckResult[] {
   const results: CheckResult[] = [];
   results.push(p.ttfbMs < 500 ? pass("ttfb", `${p.ttfbMs} ms`) : p.ttfbMs < 1000 ? warn("ttfb", `${p.ttfbMs} ms`) : fail("ttfb", `${p.ttfbMs} ms`));
   results.push(p.htmlBytes < 100_000 ? pass("html-size", `${Math.round(p.htmlBytes / 1024)} KB`) : p.htmlBytes < 200_000 ? warn("html-size", `${Math.round(p.htmlBytes / 1024)} KB`) : fail("html-size", `${Math.round(p.htmlBytes / 1024)} KB`));
-  results.push(/br|gzip|deflate|zstd/i.test(p.contentEncoding) ? pass("compression", p.contentEncoding) : warn("compression", p.contentEncoding || "No compression"));
+  const psiCompression = p.psi?.compression;
+  results.push(
+    /br|gzip|deflate|zstd/i.test(p.contentEncoding)
+      ? pass("compression", p.contentEncoding)
+      : psiCompression === true
+        ? pass("compression", "Compressed (PageSpeed)")
+        : psiCompression === false
+          ? warn("compression", "PageSpeed reports no text compression")
+          : info("compression", "Not measurable from Cloudflare's network"),
+  );
   results.push(p.renderBlocking <= 3 ? pass("render-blocking", `${p.renderBlocking} blocking asset${p.renderBlocking === 1 ? "" : "s"}`) : p.renderBlocking <= 6 ? warn("render-blocking", `${p.renderBlocking} blocking assets`) : fail("render-blocking", `${p.renderBlocking} blocking assets`));
   results.push(
     !p.assetBytes

@@ -491,6 +491,7 @@ export interface PsiFacts {
   accessibility: number | null;
   bestPractices: number | null;
   seo: number | null;
+  compression: boolean | null;
   lcp: string;
   cls: string;
   inp: string;
