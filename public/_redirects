@@ -1,0 +1,6 @@
+# Cloudflare Workers static assets redirects
+# https://developers.cloudflare.com/workers/static-assets/routing/redirects/
+
+# Cookie and accessibility notices are covered by the privacy policy.
+/cookies       /privacy   301
+/accessibility /privacy   301
