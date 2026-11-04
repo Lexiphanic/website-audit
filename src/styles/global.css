@@ -1373,37 +1373,6 @@
 /* ------------------------------------------------------------------
    Report navigation and filters
 ------------------------------------------------------------------ */
-.report-toc {
-  position: sticky;
-  top: 4.8rem;
-  z-index: 30;
-  display: flex;
-  gap: 0.35rem;
-  overflow-x: auto;
-  margin: 0 auto 1.5rem;
-  padding: 0.45rem;
-  border: 1px solid var(--color-line);
-  border-radius: 999px;
-  background: rgba(18, 10, 28, 0.82);
-  backdrop-filter: blur(16px);
-  scrollbar-width: none;
-}
-.report-toc::-webkit-scrollbar {
-  display: none;
-}
-.report-toc a {
-  flex: none;
-  border-radius: 999px;
-  padding: 0.35rem 0.75rem;
-  color: var(--color-muted);
-  font-size: 0.75rem;
-  font-weight: 500;
-  transition: color 0.2s var(--ease-brand), background 0.2s var(--ease-brand);
-}
-.report-toc a:hover {
-  background: rgba(196, 181, 253, 0.1);
-  color: var(--color-cream);
-}
 .report-section,
 .report-category {
   scroll-margin-top: 7.5rem;
@@ -1447,7 +1416,6 @@
   display: none !important;
 }
 @media print {
-  .report-toc,
   .report-filters {
     display: none !important;
   }
