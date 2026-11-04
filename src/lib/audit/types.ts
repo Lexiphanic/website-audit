@@ -137,6 +137,11 @@ export interface CertificateInfo {
   chainLength: number;
   authorized: boolean;
   authorizationError: string;
+  keyAlg: string;
+  keySize: number | null;
+  sigAlg: string;
+  revocationStatus: number | null;
+  mustStaple: boolean | null;
 }
 
 export interface TlsVersionProbe {
@@ -155,6 +160,8 @@ export interface TlsProbe {
   grade: string;
   source: string;
   pending: boolean;
+  ocspStapling: boolean | null;
+  forwardSecrecy: number | null;
   error?: string;
 }
 
@@ -211,6 +218,7 @@ export interface DnsRecords {
 }
 
 export interface EmailAuthFacts {
+  spfRecords: string[];
   spf: { present: boolean; record: string; qualifier: string; lookupCount: number };
   dmarc: {
     present: boolean;
@@ -289,6 +297,8 @@ export interface HtmlFacts {
   generator: string;
   platform: string;
   platformConfidence: "high" | "medium" | "low";
+  technologies: string[];
+  technologyGroups: Record<string, string[]>;
   analytics: string[];
   consent: string[];
   social: string[];
@@ -302,6 +312,9 @@ export interface HtmlFacts {
   metaCount: number;
   duplicateMeta: number;
   ogImageStatus: number;
+  ogImageWidth: number;
+  ogImageHeight: number;
+  ogImageType: string;
   bodyHash: string;
 }
 
@@ -329,9 +342,11 @@ export interface FilesFacts {
     valid: boolean;
     urls: string[];
     count: number;
-    sample: { url: string; status: number; error?: string }[];
+    sample: { url: string; status: number; finalUrl: string; redirects: number; error?: string }[];
     lastmod: string;
     source: string;
+    contentType: string;
+    homepage: boolean;
   };
   securityTxt: {
     present: boolean;
@@ -348,6 +363,15 @@ export interface FilesFacts {
     bytes: number;
     headings: number;
     links: number;
+    title: string;
+    description: string;
+  };
+  mtaStsPolicy: {
+    present: boolean;
+    valid: boolean;
+    mode: string;
+    maxAge: number | null;
+    mx: string[];
   };
   aiTxt: boolean;
   changePassword: boolean;
@@ -364,6 +388,14 @@ export interface FilesFacts {
   appAdsTxt: boolean;
   browserconfig: boolean;
   manifest: boolean;
+  manifestInfo: {
+    present: boolean;
+    valid: boolean;
+    name: string;
+    startUrl: string;
+    iconCount: number;
+    brokenIcons: string[];
+  };
   rootIcons: { favicon: boolean; appleTouch: boolean };
 }
 
@@ -390,6 +422,7 @@ export interface SecurityFacts {
   referrerPolicy: string;
   permissionsPolicy: string;
   coop: string;
+  coep: string;
   corp: string;
   sri: { externalScripts: number; withIntegrity: number };
   forms: { action: string; method: string; insecure: boolean }[];
@@ -442,6 +475,8 @@ export interface PerformanceFacts {
 export interface MigrationFacts {
   platform: string;
   platformConfidence: "high" | "medium" | "low";
+  technologies: string[];
+  technologyGroups: Record<string, string[]>;
   hosting: string;
   pageCount: number;
   ecommerce: string[];

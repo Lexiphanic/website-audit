@@ -53,6 +53,7 @@ no test or lint script; do not invent one.
 | Worker entrypoint + Workflow export | `src/worker.ts` |
 | Workflow pipeline | `src/lib/workflow/audit.ts` |
 | Check metadata and copy | `src/lib/audit/registry.ts` |
+| Technology fingerprints | `src/lib/audit/fingerprints.ts` |
 | Facts collectors | `src/lib/audit/{dns,transport,html,files,security,performance,migration,tls}.ts` |
 | Check evaluation | `src/lib/audit/checks.ts` |
 | Scoring and payload trimming | `src/lib/audit/score.ts` |

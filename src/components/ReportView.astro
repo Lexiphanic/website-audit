@@ -208,6 +208,9 @@ const psi = performance?.psi;
               <div><dt>Subject</dt><dd>{apexCert.subject || "—"}</dd></div>
               <div><dt>Valid until</dt><dd>{new Date(apexCert.validTo).toLocaleDateString("en-GB", { dateStyle: "long" })} · {apexCert.daysRemaining} days</dd></div>
               <div><dt>Chain</dt><dd>{apexCert.chainLength} certificate{apexCert.chainLength === 1 ? "" : "s"} · {apexCert.authorized ? "trusted" : "not trusted"}</dd></div>
+              <div><dt>Key</dt><dd>{apexCert.keyAlg ? `${apexCert.keyAlg} ${apexCert.keySize ?? ""}` : "—"}</dd></div>
+              <div><dt>Signature</dt><dd>{apexCert.sigAlg || "—"}</dd></div>
+              <div><dt>TLS details</dt><dd>{transport?.tls.apex?.ocspStapling ? "OCSP stapled" : "No OCSP stapling"} · {typeof transport?.tls.apex?.forwardSecrecy === "number" && (transport.tls.apex.forwardSecrecy & 4) === 4 ? "forward secret" : "FS not confirmed"}</dd></div>
               <div><dt>TLS grade</dt><dd>{transport?.tls.apex?.grade ? `${transport.tls.apex.grade} · SSL Labs` : transport?.tls.apex?.pending ? "Pending · SSL Labs scan running" : transport?.tls.apex?.error ? `Not available · ${transport.tls.apex.error}` : "Not available"}</dd></div>
               <div><dt>Source</dt><dd>{transport?.tls.apex?.source || "—"}</dd></div>
               <div><dt>Names</dt><dd class="break-all">{apexCert.sans.slice(0, 8).join(", ") || apexCert.subject}</dd></div>
@@ -367,6 +370,27 @@ const psi = performance?.psi;
           </p>
         </div>
       </div>
+
+      {migration?.technologies?.length ? (
+        <div class="report-panel mt-5">
+          <h3 class="report-panel-title">Detected technologies</h3>
+          <div class="mt-3 grid gap-3">
+            {Object.entries(migration.technologyGroups ?? {}).map(([group, items]) => (
+              <div class="grid grid-cols-1 gap-2 min-[600px]:grid-cols-[10rem_1fr]">
+                <p class="text-[0.7rem] font-semibold tracking-[0.1em] text-violet-300 uppercase">{group}</p>
+                <div class="flex flex-wrap gap-2">
+                  {items.map((item) => <span class="badge badge-muted">{item}</span>)}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div class="report-panel mt-5">
+          <h3 class="report-panel-title">Detected technologies</h3>
+          <p class="mt-2 text-[0.84rem] text-muted">No common fingerprints were found.</p>
+        </div>
+      )}
 
       <div class="report-panel mt-5">
         <h3 class="report-panel-title">What we would do next</h3>

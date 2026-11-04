@@ -32,6 +32,7 @@ export interface AuditParams {
 const EMPTY_DNS: DnsFacts = {
   records: { a: [], aaaa: [], cname: [], ns: [], mx: [], txt: [], caa: [], dnskey: false, ds: false, ad: false, soa: "" },
   email: {
+    spfRecords: [],
     spf: { present: false, record: "", qualifier: "", lookupCount: 0 },
     dmarc: { present: false, record: "", policy: "", subdomainPolicy: "", pct: null, rua: "", ruf: "" },
     dkimSelectors: [],

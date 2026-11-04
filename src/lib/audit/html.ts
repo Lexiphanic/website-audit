@@ -1,6 +1,7 @@
 import { parseHTML } from "linkedom";
 import { cleanText, sha256 } from "../util";
-import { probeStatus } from "./fetch";
+import { fetchBytes } from "./fetch";
+import { detectFingerprints } from "./fingerprints";
 import type { HtmlFacts, HtmlImageFact, HtmlScriptFact } from "./types";
 
 function metaMap(document: Document): Map<string, string[]> {
@@ -33,78 +34,70 @@ function imageFormat(src: string): string {
   return ext ? ext.toUpperCase() : "Unknown";
 }
 
-function detectPlatform(
-  html: string,
-  document: Document,
-  headers: Record<string, string>,
-): { platform: string; confidence: "high" | "medium" | "low" } {
-  const generator = first(metaMap(document), "generator").toLowerCase();
-  const haystack = `${html.slice(0, 200_000)} ${Object.values(headers).join(" ")}`.toLowerCase();
-
-  const tests: { name: string; test: RegExp; confidence: "high" | "medium" | "low" }[] = [
-    { name: "WordPress", test: /wp-content|wp-includes|wp-json/i, confidence: "high" },
-    { name: "WooCommerce", test: /woocommerce|wc-block|wc_add_to_cart/i, confidence: "high" },
-    { name: "Shopify", test: /cdn\.shopify\.com|shopify\.theme|shopify-payment/i, confidence: "high" },
-    { name: "Wix", test: /wixstatic\.com|wix\.com|parastorage/i, confidence: "high" },
-    { name: "Squarespace", test: /squarespace\.com|static1\.squarespace/i, confidence: "high" },
-    { name: "Webflow", test: /data-wf-site|webflow\.com|webflow\.js/i, confidence: "high" },
-    { name: "Framer", test: /framerusercontent\.com|framer\.com/i, confidence: "medium" },
-    { name: "GoDaddy Website Builder", test: /godaddy|websitebuilder/i, confidence: "medium" },
-    { name: "Duda", test: /dudamobile|dudaone|duda\.co/i, confidence: "medium" },
-    { name: "Ghost", test: /ghost\/|ghost\.org|ghost-url/i, confidence: "medium" },
-    { name: "HubSpot CMS", test: /hubspot|hs-scripts\.com|hs_cos_wrapper/i, confidence: "medium" },
-    { name: "Joomla", test: /joomla|com_content/i, confidence: "medium" },
-    { name: "Drupal", test: /drupal|sites\/default\/files/i, confidence: "medium" },
-    { name: "Magento", test: /magento|mage\/cookies|static\/version/i, confidence: "medium" },
-    { name: "BigCommerce", test: /bigcommerce\.com|bc-sf-filter/i, confidence: "medium" },
-    { name: "PrestaShop", test: /prestashop/i, confidence: "medium" },
-  ];
-
-  if (generator) {
-    const byGenerator = tests.find((test) => generator.includes(test.name.toLowerCase().split(" ")[0]));
-    if (byGenerator) return { platform: byGenerator.name, confidence: "high" };
-    return { platform: cleanText(first(metaMap(document), "generator"), 80), confidence: "medium" };
+function imageDimensions(bytes: Uint8Array, contentType: string): {
+  width: number;
+  height: number;
+  type: string;
+} {
+  const type = contentType.split(";")[0]?.toLowerCase() ?? "";
+  try {
+    if (bytes.length > 24 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) {
+      const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+      return { width: view.getUint32(16), height: view.getUint32(20), type: "PNG" };
+    }
+    if (bytes.length > 10 && bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46) {
+      return {
+        width: bytes[6] | (bytes[7] << 8),
+        height: bytes[8] | (bytes[9] << 8),
+        type: "GIF",
+      };
+    }
+    if (bytes.length > 30 && bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[8] === 0x57 && bytes[9] === 0x45) {
+      const chunk = String.fromCharCode(bytes[12], bytes[13], bytes[14], bytes[15]);
+      if (chunk === "VP8X") {
+        return {
+          width: 1 + (bytes[24] | (bytes[25] << 8) | (bytes[26] << 16)),
+          height: 1 + (bytes[27] | (bytes[28] << 8) | (bytes[29] << 16)),
+          type: "WebP",
+        };
+      }
+      if (chunk === "VP8 " && bytes.length > 29) {
+        return {
+          width: (bytes[26] | (bytes[27] << 8)) & 0x3fff,
+          height: (bytes[28] | (bytes[29] << 8)) & 0x3fff,
+          type: "WebP",
+        };
+      }
+    }
+    if (bytes.length > 4 && bytes[0] === 0xff && bytes[1] === 0xd8) {
+      let offset = 2;
+      while (offset + 9 < bytes.length) {
+        if (bytes[offset] !== 0xff) {
+          offset += 1;
+          continue;
+        }
+        const marker = bytes[offset + 1];
+        const length = (bytes[offset + 2] << 8) | bytes[offset + 3];
+        if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+          return {
+            width: (bytes[offset + 7] << 8) | bytes[offset + 8],
+            height: (bytes[offset + 5] << 8) | bytes[offset + 6],
+            type: "JPEG",
+          };
+        }
+        offset += 2 + length;
+      }
+    }
+    if (type.includes("svg") || bytes.slice(0, 200).some((byte) => byte === 0x3c)) {
+      const text = new TextDecoder().decode(bytes.slice(0, 4096));
+      const width = /width=["']?([\d.]+)/i.exec(text)?.[1];
+      const height = /height=["']?([\d.]+)/i.exec(text)?.[1];
+      if (width && height) return { width: Number(width), height: Number(height), type: "SVG" };
+    }
+  } catch {
+    // Unknown image format
   }
-
-  const match = tests.find((test) => test.test.test(haystack));
-  if (match) return { platform: match.name, confidence: match.confidence };
-  return { platform: "Unknown / custom", confidence: "low" };
-}
-
-function detectAnalytics(html: string, document: Document): string[] {
-  const sources = Array.from(document.querySelectorAll("script[src]"))
-    .map((script) => script.getAttribute("src") ?? "")
-    .join(" ");
-  const haystack = `${sources} ${html.slice(0, 300_000)}`.toLowerCase();
-  const found = new Set<string>();
-  if (/googletagmanager\.com\/gtag\/js|gtag\(/.test(haystack)) found.add("Google Analytics 4");
-  if (/googletagmanager\.com\/gtm\.js|gtm-/.test(haystack)) found.add("Google Tag Manager");
-  if (/connect\.facebook\.net|fbq\(/.test(haystack)) found.add("Meta Pixel");
-  if (/snap\.licdn\.com|linkedin insight/.test(haystack)) found.add("LinkedIn Insight");
-  if (/static\.hotjar\.com|hj\(/.test(haystack)) found.add("Hotjar");
-  if (/clarity\.ms/.test(haystack)) found.add("Microsoft Clarity");
-  if (/plausible\.io/.test(haystack)) found.add("Plausible");
-  if (/usefathom\.com/.test(haystack)) found.add("Fathom");
-  if (/matomo|piwik/.test(haystack)) found.add("Matomo");
-  if (/analytics\.tiktok\.com|ttq\./.test(haystack)) found.add("TikTok Pixel");
-  if (/hs-scripts\.com|hubspot/.test(haystack)) found.add("HubSpot");
-  return [...found];
-}
-
-function detectConsent(html: string): string[] {
-  const haystack = html.slice(0, 400_000).toLowerCase();
-  const found = new Set<string>();
-  if (/onetrust|optanon/.test(haystack)) found.add("OneTrust");
-  if (/cookiebot/.test(haystack)) found.add("Cookiebot");
-  if (/cookieyes/.test(haystack)) found.add("CookieYes");
-  if (/osano/.test(haystack)) found.add("Osano");
-  if (/termly/.test(haystack)) found.add("Termly");
-  if (/iubenda/.test(haystack)) found.add("iubenda");
-  if (/complianz/.test(haystack)) found.add("Complianz");
-  if (/borlabs/.test(haystack)) found.add("Borlabs");
-  if (/usercentrics/.test(haystack)) found.add("Usercentrics");
-  if (/cookieconsent|gdpr-cookie/.test(haystack)) found.add("Cookie consent script");
-  return [...found];
+  return { width: 0, height: 0, type: type || "Unknown" };
 }
 
 function detectSocial(document: Document): string[] {
@@ -296,7 +289,21 @@ export async function collectHtml(
 
   const bodyText = document.body?.textContent ?? "";
   const wordCount = bodyText.trim() ? bodyText.trim().split(/\s+/).length : 0;
-  const platform = detectPlatform(html, document, headers);
+  const fingerprints = detectFingerprints({ html, headers, url: finalUrl });
+  const generator = first(meta, "generator");
+  const platformFingerprint =
+    fingerprints.find((item) => ["CMS", "Ecommerce", "Website builder"].includes(item.category)) ??
+    fingerprints.find((item) => item.category === "Framework");
+  const platform = platformFingerprint
+    ? { platform: platformFingerprint.name, confidence: platformFingerprint.confidence }
+    : generator
+      ? { platform: cleanText(generator, 80), confidence: "medium" as const }
+      : { platform: "Unknown / custom", confidence: "low" as const };
+  const technologyGroups: Record<string, string[]> = {};
+  for (const fingerprint of fingerprints) {
+    (technologyGroups[fingerprint.category] ??= []).push(fingerprint.name);
+  }
+
   const charset =
     document.querySelector("meta[charset]")?.getAttribute("charset") ??
     (document.querySelector('meta[http-equiv="content-type" i]')?.getAttribute("content") ?? "").match(/charset=([^;]+)/i)?.[1] ??
@@ -310,11 +317,19 @@ export async function collectHtml(
   duplicateMeta += Math.max(0, document.querySelectorAll("title").length - 1);
 
   let ogImageStatus = 0;
+  let ogImageWidth = 0;
+  let ogImageHeight = 0;
+  let ogImageType = "";
   const ogImage = og["og:image"] ?? "";
   if (ogImage && !ogImage.startsWith("data:")) {
     try {
       const absoluteOg = new URL(ogImage, base).href;
-      ogImageStatus = await probeStatus(absoluteOg);
+      const image = await fetchBytes(absoluteOg, { maxBytes: 512_000 });
+      ogImageStatus = image.status;
+      const dimensions = imageDimensions(image.bytes, image.contentType);
+      ogImageWidth = dimensions.width;
+      ogImageHeight = dimensions.height;
+      ogImageType = dimensions.type;
     } catch {
       ogImageStatus = 0;
     }
@@ -350,8 +365,14 @@ export async function collectHtml(
     generator: first(meta, "generator"),
     platform: platform.platform,
     platformConfidence: platform.confidence,
-    analytics: detectAnalytics(html, document),
-    consent: detectConsent(html),
+    technologies: fingerprints.map((item) => item.name),
+    technologyGroups,
+    analytics: fingerprints
+      .filter((item) => ["Analytics", "Advertising", "Tag manager"].includes(item.category))
+      .map((item) => item.name),
+    consent: fingerprints
+      .filter((item) => item.category === "Consent")
+      .map((item) => item.name),
     social: detectSocial(document),
     emails: extractEmails(document, html),
     phones: extractPhones(document),
@@ -363,6 +384,9 @@ export async function collectHtml(
     metaCount: document.querySelectorAll("meta").length,
     duplicateMeta,
     ogImageStatus,
+    ogImageWidth,
+    ogImageHeight,
+    ogImageType,
     bodyHash: await sha256(html),
   };
 }

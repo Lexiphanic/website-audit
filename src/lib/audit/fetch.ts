@@ -25,6 +25,14 @@ export interface FetchResult {
   error?: string;
 }
 
+export interface BinaryResult {
+  url: string;
+  status: number;
+  headers: Record<string, string>;
+  contentType: string;
+  bytes: Uint8Array;
+}
+
 function headersToObject(headers: Headers): Record<string, string> {
   const result: Record<string, string> = {};
   headers.forEach((value, key) => {
@@ -230,4 +238,57 @@ export async function probeStatus(url: string, timeoutMs = 6000): Promise<number
     return get.status;
   }
   return head.status;
+}
+
+/** Fetch a small binary asset (used for OG image dimensions). */
+export async function fetchBytes(
+  url: string,
+  options: { timeoutMs?: number; maxBytes?: number } = {},
+): Promise<BinaryResult> {
+  let current = url;
+  for (let hop = 0; hop < 4; hop += 1) {
+    await assertSafeUrl(current);
+    const response = await fetch(current, {
+      redirect: "manual",
+      signal: AbortSignal.timeout(options.timeoutMs ?? 8000),
+      headers: {
+        "user-agent": USER_AGENT,
+        accept: "image/avif,image/webp,image/png,image/jpeg,image/gif,image/svg+xml,*/*;q=0.5",
+      },
+    });
+    if (response.status >= 300 && response.status < 400 && response.headers.get("location")) {
+      current = new URL(response.headers.get("location") ?? "", current).href;
+      continue;
+    }
+    const maxBytes = options.maxBytes ?? 512_000;
+    const reader = response.body?.getReader();
+    const chunks: Uint8Array[] = [];
+    let received = 0;
+    if (reader) {
+      while (received < maxBytes) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (!value) continue;
+        const remaining = maxBytes - received;
+        const chunk = value.byteLength > remaining ? value.slice(0, remaining) : value;
+        chunks.push(chunk);
+        received += chunk.byteLength;
+        if (chunk.byteLength < value.byteLength) break;
+      }
+    }
+    const bytes = new Uint8Array(received);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    return {
+      url: current,
+      status: response.status,
+      headers: headersToObject(response.headers),
+      contentType: response.headers.get("content-type") ?? "",
+      bytes,
+    };
+  }
+  throw new Error("Too many redirects");
 }

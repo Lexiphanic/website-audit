@@ -83,6 +83,24 @@ const transport: CheckDefinition[] = [
   d("mixed-content", "transport", "No mixed content on the homepage", "high", 4,
     "An HTTPS page that loads HTTP assets is partially insecure and browsers may block the asset outright.",
     "Load every script, stylesheet, image and font over HTTPS, including inside CSS."),
+  d("tls-grade", "transport", "SSL Labs grade is healthy", "high", 3,
+    "The SSL Labs grade condenses protocol, cipher and certificate quality into one comparable result.",
+    "Work through the SSL Labs findings until the grade is A or A+."),
+  d("tls-ocsp-stapling", "transport", "OCSP stapling is enabled", "medium", 2,
+    "Stapling lets the server prove the certificate is not revoked without making the visitor contact the CA.",
+    "Enable OCSP stapling at the edge or origin and keep the stapled response fresh."),
+  d("tls-forward-secrecy", "transport", "Forward secrecy is available", "high", 3,
+    "Without forward secrecy, a later private-key compromise can decrypt recorded traffic.",
+    "Enable ECDHE (and DHE where needed) so modern clients always negotiate a forward-secret suite."),
+  d("cert-key-strength", "transport", "Certificate key strength is adequate", "high", 3,
+    "Weak RSA keys or undersized EC keys undermine the certificate even when it is valid.",
+    "Use at least RSA 2048 or EC 256, and rotate to a stronger key before renewal."),
+  d("cert-signature", "transport", "Certificate signature is modern", "medium", 2,
+    "SHA-1 and MD5 signatures are deprecated and rejected or warned about by modern clients.",
+    "Reissue the certificate with a SHA-256 or stronger signature."),
+  d("cert-revocation", "transport", "Certificate revocation status is known", "high", 3,
+    "A revoked certificate should not be trusted, even if its dates and hostname look correct.",
+    "Check the CA's revocation information and replace a revoked certificate immediately."),
 ];
 
 /* ------------------------------------------------------------------ */
@@ -190,6 +208,15 @@ const metadata: CheckDefinition[] = [
   d("duplicate-meta", "metadata", "No duplicate meta tags", "low", 1,
     "Two titles or two canonicals make the page's intent ambiguous.",
     "Render one of each important tag."),
+  d("og-image-dimensions", "metadata", "Open Graph image has useful dimensions", "medium", 2,
+    "A tiny or oddly shaped image is cropped or ignored when the page is shared.",
+    "Use roughly 1200×630 (1.91:1) and keep the important content away from the edges."),
+  d("manifest-valid", "metadata", "Web app manifest is valid", "medium", 2,
+    "A malformed manifest is ignored, so the site loses its install metadata and icons.",
+    "Validate the JSON and include name, start_url, display and at least one icon."),
+  d("manifest-icons", "metadata", "Manifest icons resolve", "low", 1,
+    "A manifest that points at missing icons fails at install time.",
+    "Serve every declared icon at the right size and type, or remove the broken entries."),
 ];
 
 /* ------------------------------------------------------------------ */
@@ -254,6 +281,21 @@ const crawl: CheckDefinition[] = [
   d("semantic-headings", "crawl", "Content uses semantic landmarks", "medium", 2,
     "Semantic HTML helps search engines and assistive technology understand the page structure.",
     "Use header, nav, main, article, section and footer rather than generic divs everywhere."),
+  d("sitemap-homepage", "crawl", "Sitemap includes the homepage", "medium", 2,
+    "A sitemap that omits the homepage looks like a generated file nobody checked.",
+    "Include the canonical homepage URL in the sitemap."),
+  d("sitemap-redirects", "crawl", "Sitemap URLs do not redirect", "medium", 2,
+    "Redirecting URLs in a sitemap waste crawl budget and hide the canonical address.",
+    "Replace each redirecting sitemap URL with its final canonical target."),
+  d("sitemap-content-type", "crawl", "Sitemap is served as XML", "low", 1,
+    "A sitemap served as HTML or plain text can confuse crawlers and validators.",
+    "Serve application/xml or text/xml with a valid sitemap document."),
+  d("robots-content-type", "crawl", "robots.txt is served as text", "low", 1,
+    "An HTML content type can make a WAF or crawler treat robots.txt as a page.",
+    "Serve text/plain; charset=utf-8."),
+  d("llms-quality", "crawl", "llms.txt is useful", "low", 1,
+    "A file that exists but has no title or links does not help an AI tool understand the site.",
+    "Give llms.txt a short title, a description and links to the pages that matter."),
 ];
 
 /* ------------------------------------------------------------------ */
@@ -318,6 +360,15 @@ const wellknown: CheckDefinition[] = [
   d("root-icons", "wellknown", "Root icons resolve", "low", 1,
     "Browsers, feed readers and some crawlers ask for /favicon.ico and /apple-touch-icon.png directly.",
     "Serve both at the root, or redirect them to the real files."),
+  d("security-txt-policy", "wellknown", "security.txt links to a policy", "low", 1,
+    "A Policy link tells a researcher what you consider in scope and how you handle reports.",
+    "Add a Policy URL that explains the disclosure process."),
+  d("security-txt-encryption", "wellknown", "security.txt offers encryption", "low", 1,
+    "An Encryption field lets a researcher send sensitive details without exposing them in email.",
+    "Publish a PGP key URL or fingerprint if you accept encrypted reports."),
+  d("mta-sts-policy", "wellknown", "MTA-STS policy is valid", "medium", 2,
+    "A policy file with the wrong version, mode or MX list is ignored by sending servers.",
+    "Publish version: STSv1, a valid mode, max_age and every MX host that should receive mail."),
 ];
 
 /* ------------------------------------------------------------------ */
@@ -421,6 +472,24 @@ const security: CheckDefinition[] = [
   d("server-disclosure", "security", "Server software is not over-disclosed", "low", 1,
     "Version banners help an attacker choose an exploit, though they are not a vulnerability themselves.",
     "Remove or genericise Server and X-Powered-By where the platform allows it."),
+  d("spf-multiple", "security", "Only one SPF record is published", "high", 2,
+    "Two SPF records are invalid, and receivers may treat the domain as having no policy at all.",
+    "Merge the mechanisms into one SPF record per domain."),
+  d("dmarc-reporting", "security", "DMARC sends reports", "medium", 2,
+    "Without rua reporting you cannot see who is sending as your domain or whether the policy is safe to tighten.",
+    "Add a monitored rua address and review the reports before moving to reject."),
+  d("dmarc-pct", "security", "DMARC applies to all mail", "low", 1,
+    "A pct below 100 leaves a share of mail outside the policy.",
+    "Move pct to 100 once the reports show legitimate mail is authenticating."),
+  d("coep", "security", "Cross-Origin-Embedder-Policy is set", "low", 1,
+    "COEP is required for cross-origin isolation and some advanced browser APIs.",
+    "Send Cross-Origin-Embedder-Policy: require-corp where the page does not depend on unlabelled cross-origin resources."),
+  d("cookies-prefix", "security", "Sensitive cookies use a prefix", "low", 1,
+    "The __Host- and __Secure- prefixes make it harder to overwrite a cookie from a subdomain or insecure context.",
+    "Use __Host- for session cookies set from the exact host over HTTPS."),
+  d("cookies-none-secure", "security", "SameSite=None cookies are Secure", "high", 2,
+    "Browsers reject SameSite=None without Secure, and the cookie may not be sent at all.",
+    "Add Secure whenever SameSite=None is required for a cross-site flow."),
 ];
 
 /* ------------------------------------------------------------------ */
@@ -543,6 +612,15 @@ const migration: CheckDefinition[] = [
   d("content-inventory", "migration", "Content volume is known", "low", 1,
     "Word count, image count and page count give a rough shape to the build.",
     "Count the pages, images and words, and identify the content that needs rewriting."),
+  d("ns-redundancy", "migration", "Nameservers are redundant", "medium", 2,
+    "A single nameserver, or a single provider, is a migration and resilience risk.",
+    "Use at least two nameservers, ideally across more than one provider."),
+  d("mx-redundancy", "migration", "Mail exchangers are redundant", "medium", 2,
+    "One MX record is a single point of failure for every inbound message.",
+    "Publish at least two MX hosts, or use a provider that handles redundancy for you."),
+  d("domain-age", "migration", "Domain age is known", "info", 0,
+    "Registration age is useful context for a migration and for trust decisions.",
+    "Record the registration date from RDAP; no action is needed unless the domain is very new."),
 ];
 
 export const CHECK_DEFINITIONS: CheckDefinition[] = [

@@ -98,6 +98,8 @@ export async function collectMigration(
   return {
     platform: html.platform,
     platformConfidence: html.platformConfidence,
+    technologies: html.technologies,
+    technologyGroups: html.technologyGroups,
     hosting: hosting(transport.homepage.headers, dns),
     pageCount: files.sitemaps.count,
     ecommerce: ecommerce(html),

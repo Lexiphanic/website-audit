@@ -18,6 +18,10 @@ interface LabCert {
   sha256Hash?: string;
   keyAlg?: string;
   keySize?: number;
+  sigAlg?: string;
+  revocationStatus?: number;
+  mustStaple?: boolean;
+  ocspRevocationStatus?: number;
 }
 
 interface LabEndpoint {
@@ -31,6 +35,8 @@ interface LabEndpoint {
     chain?: { certs?: LabCert[] };
     supportsAlpn?: boolean;
     alpnProtocols?: string[] | string;
+    ocspStapling?: boolean;
+    forwardSecrecy?: number;
   };
 }
 
@@ -60,6 +66,8 @@ export interface LabsSummary {
   cipher: string;
   protocol: string;
   http2: boolean;
+  ocspStapling: boolean | null;
+  forwardSecrecy: number | null;
   error?: string;
 }
 
@@ -92,6 +100,11 @@ function certFromCrt(entry: CrtEntry, daysRemaining: number): CertificateInfo {
     chainLength: 1,
     authorized: daysRemaining > 0,
     authorizationError: daysRemaining > 0 ? "" : "Certificate has expired",
+    keyAlg: "",
+    keySize: null,
+    sigAlg: "",
+    revocationStatus: null,
+    mustStaple: null,
   };
 }
 
@@ -114,6 +127,11 @@ function certFromLab(cert: LabCert): CertificateInfo {
     chainLength: 1,
     authorized: daysRemaining > 0,
     authorizationError: daysRemaining > 0 ? "" : "Certificate has expired",
+    keyAlg: cert.keyAlg ?? "",
+    keySize: typeof cert.keySize === "number" ? cert.keySize : null,
+    sigAlg: cert.sigAlg ?? "",
+    revocationStatus: typeof cert.revocationStatus === "number" ? cert.revocationStatus : null,
+    mustStaple: typeof cert.mustStaple === "boolean" ? cert.mustStaple : null,
   };
 }
 
@@ -157,6 +175,8 @@ function emptyLabs(state: "error" | "pending", error?: string): LabsSummary {
     cipher: "",
     protocol: "",
     http2: false,
+    ocspStapling: null,
+    forwardSecrecy: null,
     error,
   };
 }
@@ -204,6 +224,8 @@ function parseLab(data: LabResponse): LabsSummary {
     cipher: "",
     protocol: protocols.map((item) => `${item.name ?? "TLS"} ${item.version ?? ""}`.trim()).join(", "),
     http2: Boolean(details?.supportsAlpn && alpn.some((value) => value.includes("h2"))),
+    ocspStapling: typeof details?.ocspStapling === "boolean" ? details.ocspStapling : null,
+    forwardSecrecy: typeof details?.forwardSecrecy === "number" ? details.forwardSecrecy : null,
   };
 }
 
@@ -250,6 +272,8 @@ export function emptyTlsProbe(error: string): TlsProbe {
     grade: "",
     source: "",
     pending: false,
+    ocspStapling: null,
+    forwardSecrecy: null,
     error,
   };
 }
@@ -264,6 +288,8 @@ export function tlsFromLabs(summary: LabsSummary, fallback: CertificateInfo | nu
     grade: summary.grade,
     source: summary.certificate ? "SSL Labs" : fallback ? "crt.sh" : "",
     pending: summary.state === "pending",
+    ocspStapling: summary.ocspStapling,
+    forwardSecrecy: summary.forwardSecrecy,
     error: summary.error,
   };
 }

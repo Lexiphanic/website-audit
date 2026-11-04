@@ -129,6 +129,7 @@ export async function collectSecurity(
     referrerPolicy: headers["referrer-policy"] ?? "",
     permissionsPolicy: headers["permissions-policy"] ?? "",
     coop: headers["cross-origin-opener-policy"] ?? "",
+    coep: headers["cross-origin-embedder-policy"] ?? "",
     corp: headers["cross-origin-resource-policy"] ?? "",
     sri: {
       externalScripts: externalScripts.length,

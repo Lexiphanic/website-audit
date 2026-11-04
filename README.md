@@ -184,6 +184,7 @@ groups are in the same directory:
 | `transport.ts` | redirect matrix, HSTS, homepage headers, SSL Labs/crt.sh |
 | `dns.ts` | DoH records, DNSSEC, SPF/DKIM/DMARC/BIMI/MTA-STS/TLS-RPT, RDAP |
 | `html.ts` | title, meta, Open Graph, JSON-LD, hreflang, headings, images, platform |
+| `fingerprints.ts` | CMS, framework, analytics, consent, payments, booking, hosting and library detection |
 | `files.ts` | robots.txt, sitemaps, llms.txt, security.txt, well-known set |
 | `security.ts` | CSP, headers, cookies, SRI, forms, legal pages |
 | `performance.ts` | TTFB, weight, compression, assets, CDN, PSI/CrUX |

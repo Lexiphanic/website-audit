@@ -1,5 +1,5 @@
 import { XMLParser } from "fast-xml-parser";
-import { fetchFollowing, probeStatus } from "./fetch";
+import { fetchFollowing, followRedirects } from "./fetch";
 import type { FileEntryFact, FilesFacts, HtmlFacts } from "./types";
 
 interface RawFile {
@@ -190,22 +190,47 @@ async function sampleUrls(urls: string[]): Promise<FilesFacts["sitemaps"]["sampl
   const sample = urls.slice(0, 10);
   return mapLimit(sample, 5, async (url) => {
     try {
-      const status = await probeStatus(url, 6000);
-      return { url, status };
+      const probe = await followRedirects(url, { maxHops: 5 });
+      return {
+        url,
+        status: probe.status,
+        finalUrl: probe.finalUrl,
+        redirects: Math.max(0, probe.hops.length - 1),
+        error: probe.error,
+      };
     } catch (error) {
-      return { url, status: 0, error: error instanceof Error ? error.message : String(error) };
+      return {
+        url,
+        status: 0,
+        finalUrl: url,
+        redirects: 0,
+        error: error instanceof Error ? error.message : String(error),
+      };
     }
   });
 }
 
-function markdownStats(body: string): { headings: number; links: number } {
+function markdownStats(body: string): {
+  headings: number;
+  links: number;
+  title: string;
+  description: string;
+} {
   let headings = 0;
   let links = 0;
+  let title = "";
+  let description = "";
   for (const line of body.split(/\r?\n/)) {
-    if (/^#{1,6}\s+\S/.test(line)) headings += 1;
+    if (/^#{1,6}\s+\S/.test(line)) {
+      headings += 1;
+      if (!title && /^#\s+/.test(line)) title = line.replace(/^#\s+/, "").trim();
+    }
     if (/\]\([^)]+\)/.test(line)) links += 1;
+    if (!description && line.trim() && !/^#{1,6}\s+/.test(line) && !/^[-*]\s+/.test(line)) {
+      description = line.trim();
+    }
   }
-  return { headings, links };
+  return { headings, links, title, description };
 }
 
 function validJson(body: string): boolean {
@@ -280,7 +305,13 @@ export async function collectFiles(baseUrl: string, html: HtmlFacts | null): Pro
 
   // Prefer a sitemap advertised in robots.txt, then the usual candidates.
   const candidates = [...new Set([...robots.sitemaps, new URL("/sitemap.xml", base).href, new URL("/sitemap-index.xml", base).href])];
-  const sitemap: SitemapResult & { source: string } = { valid: false, urls: [], lastmod: "", source: "" };
+  const sitemap: SitemapResult & { source: string; contentType: string } = {
+    valid: false,
+    urls: [],
+    lastmod: "",
+    source: "",
+    contentType: "",
+  };
 
   for (const candidate of candidates) {
     try {
@@ -292,6 +323,7 @@ export async function collectFiles(baseUrl: string, html: HtmlFacts | null): Pro
       sitemap.valid = true;
       sitemap.source = candidate;
       sitemap.lastmod = parsed.lastmod;
+      sitemap.contentType = response.contentType;
 
       if (parsed.urls.length) {
         sitemap.urls = parsed.urls;
@@ -330,6 +362,92 @@ export async function collectFiles(baseUrl: string, html: HtmlFacts | null): Pro
   const llmsSource = llmsRoot ?? llmsWellKnown;
   const llmsStats = markdownStats(llmsSource?.body ?? "");
 
+  const mtaStsRaw = get("/.well-known/mta-sts.txt");
+  const mtaStsFields = new Map<string, string>();
+  for (const line of (mtaStsRaw?.body ?? "").split(/\r?\n/)) {
+    const index = line.indexOf(":");
+    if (index > 0) mtaStsFields.set(line.slice(0, index).trim().toLowerCase(), line.slice(index + 1).trim());
+  }
+  const mtaStsMx = (mtaStsRaw?.body ?? "")
+    .split(/\r?\n/)
+    .filter((line) => /^mx\s*:/i.test(line))
+    .map((line) => line.slice(line.indexOf(":") + 1).trim())
+    .filter(Boolean);
+  const mtaStsPolicy = {
+    present: Boolean(mtaStsRaw),
+    valid:
+      Boolean(mtaStsRaw) &&
+      /^STSv1$/i.test(mtaStsFields.get("version") ?? "") &&
+      ["enforce", "testing", "none"].includes((mtaStsFields.get("mode") ?? "").toLowerCase()) &&
+      mtaStsMx.length > 0,
+    mode: mtaStsFields.get("mode") ?? "",
+    maxAge: Number.isFinite(Number(mtaStsFields.get("max_age"))) ? Number(mtaStsFields.get("max_age")) : null,
+    mx: mtaStsMx,
+  };
+
+  const manifestHref = html?.manifestHref ? new URL(html.manifestHref, base).href : "";
+  const manifestRaw = manifestHref
+    ? await fetchFollowing(manifestHref, { timeoutMs: 7000, maxBytes: 256_000 }).catch(() => null)
+    : get("/manifest.webmanifest") ?? get("/site.webmanifest");
+  let manifestInfo: FilesFacts["manifestInfo"] = {
+    present: Boolean(manifestHref || manifestRaw),
+    valid: false,
+    name: "",
+    startUrl: "",
+    iconCount: 0,
+    brokenIcons: [],
+  };
+  const manifestStatus = manifestRaw
+    ? "entry" in manifestRaw
+      ? manifestRaw.entry.status
+      : manifestRaw.status
+    : 0;
+  const manifestBody = manifestRaw?.body ?? "";
+  const manifestBase =
+    manifestHref ||
+    (manifestRaw && "entry" in manifestRaw ? fileUrl(manifestRaw.entry.path) : base);
+  if (manifestStatus >= 200 && manifestStatus < 300) {
+    try {
+      const parsed = JSON.parse(manifestBody) as Record<string, unknown>;
+      const icons = Array.isArray(parsed.icons) ? (parsed.icons as Record<string, unknown>[]) : [];
+      const iconUrls = icons
+        .map((icon) => (typeof icon.src === "string" ? new URL(icon.src, manifestBase).href : ""))
+        .filter(Boolean)
+        .slice(0, 6);
+      const statuses = await mapLimit(iconUrls, 3, async (url) => {
+        try {
+          const probe = await followRedirects(url, { maxHops: 3 });
+          return { url, ok: probe.status >= 200 && probe.status < 300 };
+        } catch {
+          return { url, ok: false };
+        }
+      });
+      manifestInfo = {
+        present: true,
+        valid:
+          typeof parsed.name === "string" &&
+          typeof parsed.start_url === "string" &&
+          icons.length > 0,
+        name: typeof parsed.name === "string" ? parsed.name : "",
+        startUrl: typeof parsed.start_url === "string" ? parsed.start_url : "",
+        iconCount: icons.length,
+        brokenIcons: statuses.filter((item) => !item.ok).map((item) => item.url),
+      };
+    } catch {
+      manifestInfo = { ...manifestInfo, present: true, valid: false };
+    }
+  }
+
+  const baseHost = new URL(base).hostname;
+  const homepage = uniqueUrls.some((url) => {
+    try {
+      const parsed = new URL(url);
+      return parsed.hostname === baseHost && (parsed.pathname === "/" || parsed.pathname === "");
+    } catch {
+      return false;
+    }
+  });
+
   return {
     entries,
     robots: {
@@ -348,6 +466,8 @@ export async function collectFiles(baseUrl: string, html: HtmlFacts | null): Pro
       sample: uniqueUrls.length ? await sampleUrls(uniqueUrls) : [],
       lastmod: sitemap.lastmod,
       source: sitemap.source,
+      contentType: sitemap.contentType,
+      homepage,
     },
     securityTxt: {
       present: Boolean(securityRaw),
@@ -364,7 +484,10 @@ export async function collectFiles(baseUrl: string, html: HtmlFacts | null): Pro
       bytes: llmsSource?.entry.bytes ?? 0,
       headings: llmsStats.headings,
       links: llmsStats.links,
+      title: llmsStats.title,
+      description: llmsStats.description,
     },
+    mtaStsPolicy,
     aiTxt: ok("/ai.txt"),
     changePassword: ok("/.well-known/change-password"),
     aasa: ok("/.well-known/apple-app-site-association") && validJson(get("/.well-known/apple-app-site-association")?.body ?? ""),
@@ -383,6 +506,7 @@ export async function collectFiles(baseUrl: string, html: HtmlFacts | null): Pro
       Boolean(html?.manifestHref) ||
       ok("/manifest.webmanifest") ||
       ok("/site.webmanifest"),
+    manifestInfo,
     rootIcons: {
       favicon: ok("/favicon.ico"),
       appleTouch: ok("/apple-touch-icon.png"),

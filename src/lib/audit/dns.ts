@@ -255,6 +255,7 @@ export async function collectDns(domain: string): Promise<DnsFacts> {
   }
 
   const email: EmailAuthFacts = {
+    spfRecords: txtRecords.filter((value) => /^v=spf1\b/i.test(value.trim())),
     spf: parseSpf(txtRecords),
     dmarc: parseDmarc(dmarcTxt.map((value) => txtValue([value]))),
     dkimSelectors,
