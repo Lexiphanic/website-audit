@@ -18,7 +18,14 @@ export default defineConfig({
     imageService: "passthrough",
   }),
   trailingSlash: "never",
+  build: {
+    // External CSS/JS so the CSP can forbid inline styles and scripts.
+    inlineStylesheets: "never",
+  },
   vite: {
+    build: {
+      assetsInlineLimit: 0,
+    },
     plugins: [tailwindcss()],
   },
 });

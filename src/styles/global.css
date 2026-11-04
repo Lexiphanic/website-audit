@@ -139,9 +139,11 @@
     opacity: 1;
     transform: none;
   }
-  .no-js [data-reveal] {
-    opacity: 1;
-    transform: none;
+  @media (scripting: none) {
+    [data-reveal] {
+      opacity: 1;
+      transform: none;
+    }
   }
 
   /* Browser window mock */
@@ -438,8 +440,10 @@
     }
   }
 
-  .no-js .nav-toggle {
-    display: none;
+  @media (scripting: none) {
+    .nav-toggle {
+      display: none;
+    }
   }
 
   /* Long-form legal content */
