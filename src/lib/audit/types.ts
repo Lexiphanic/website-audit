@@ -75,11 +75,11 @@ export const CATEGORIES: CategoryDefinition[] = [
   },
   {
     key: "migration",
-    label: "Migration readiness",
-    short: "Migration",
+    label: "Site profile",
+    short: "Profile",
     weight: 14,
     description:
-      "What the site runs on, how much content there is, and what moving it to Lexiphanic would involve.",
+      "What the site runs on, how much content there is, and the domain, email and inventory details behind the pages.",
   },
 ];
 

@@ -2,8 +2,9 @@
 
 ## What this repo is
 
-**Lexiphanic Audit** at `audit.lexiphanic.co.uk`: a public website migration
-audit. It is a server-rendered Astro app on a Cloudflare Worker with D1 and a
+**Lexiphanic Audit** at `audit.lexiphanic.co.uk`: a public current-state
+website audit, with an optional rebuild or migration conversation. It is a
+server-rendered Astro app on a Cloudflare Worker with D1 and a
 Cloudflare Workflow. It is not the operations platform (`client-launch-lexiphanic-co-uk`)
 and not a static marketing site; it shares their branding and Astro conventions.
 

@@ -1,11 +1,11 @@
 # Lexiphanic Audit — client-audit-lexiphanic-co-uk
 
-**Lexiphanic Audit** is a public website migration audit at
-`audit.lexiphanic.co.uk`. Enter a domain and get an evidence-based report on
-the things that decide whether a migration is clean or expensive: HTTPS and the
-certificate, www/apex canonicalisation, metadata, HSTS, `llms.txt`,
-`security.txt`, well-known files, security headers, email DNS, performance and
-migration readiness.
+**Lexiphanic Audit** is a public website audit at
+`audit.lexiphanic.co.uk`. Enter a domain and get an evidence-based snapshot of
+the site as it is today: HTTPS and the certificate, www/apex canonicalisation,
+metadata, HSTS, `llms.txt`, `security.txt`, well-known files, security headers,
+email DNS, performance and the site profile. The migration conversation is
+optional; the report stands on its own.
 
 The report is the marketing asset: it is shareable, printable, and designed to
 be saved as a PDF from the browser.

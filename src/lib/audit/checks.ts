@@ -1039,7 +1039,7 @@ export function performanceChecks(facts: AuditFacts): CheckResult[] {
 }
 
 /* ------------------------------------------------------------------ */
-/* Migration                                                          */
+/* Site profile                                                       */
 /* ------------------------------------------------------------------ */
 
 export function migrationChecks(facts: AuditFacts): CheckResult[] {

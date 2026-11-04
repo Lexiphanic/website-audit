@@ -49,6 +49,6 @@ export const addressLines = [
   site.address.country,
 ];
 
-export const auditTagline = "Website migration audit";
+export const auditTagline = "Website audit";
 export const auditDescription =
-  "A free, evidence-based audit of the site you are thinking of moving to Lexiphanic: HTTPS and certificates, www/apex redirects, metadata, HSTS, llms.txt, security.txt, well-known files and the rest of the details that decide how clean a migration will be.";
+  "A free, evidence-based snapshot of the site you have today: HTTPS and certificates, www/apex redirects, metadata, HSTS, llms.txt, security.txt, well-known files, security headers, performance and the platform behind it.";

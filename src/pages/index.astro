@@ -15,28 +15,28 @@ const steps = [
   {
     number: "01",
     title: "Enter the address",
-    body: "One domain is enough. We normalise it and audit the apex and www together, because that is where most migration surprises start.",
+    body: "One domain is enough. We normalise it and audit the apex and www together, because that is where most site surprises start.",
   },
   {
     number: "02",
     title: "We check the site",
-    body: "HTTPS and the certificate, redirects, metadata, HSTS, llms.txt, security.txt, well-known files, headers, email DNS and the rest.",
+    body: "HTTPS and the certificate, redirects, metadata, HSTS, llms.txt, security.txt, well-known files, headers, email DNS, performance and the platform behind it.",
   },
   {
     number: "03",
     title: "Read the report",
-    body: "A shareable, printable report with the evidence, why each finding matters, and what we would do about it before the move.",
+    body: "A shareable, printable report with the evidence, why each finding matters, and what we would do about it now.",
   },
 ];
 
 const faqs = [
   {
     q: "Is it really free?",
-    a: "Yes. It is a public tool, not a trial. There is no account and no card. We use it as the first conversation about a migration.",
+    a: "Yes. It is a public tool, not a trial. There is no account and no card. We use it as the first conversation about a site: what is working, what needs attention, and whether a rebuild or move is worth it.",
   },
   {
     q: "What do you actually check?",
-    a: "Around 180 signals across transport and TLS, host canonicalisation, metadata, crawlability, well-known files, security headers, performance and migration readiness, plus a technology fingerprint. The full list is below.",
+    a: "Around 180 signals across transport and TLS, host canonicalisation, metadata, crawlability, well-known files, security headers, performance and site profile, plus a technology fingerprint. The full list is below.",
   },
   {
     q: "Do you store the site or my details?",
@@ -46,23 +46,27 @@ const faqs = [
     q: "Why is a check marked “not checked”?",
     a: "Some sites block automated requests, some checks need a working PageSpeed Insights key, and some files are optional. We say so rather than turning a missing signal into a failure.",
   },
+  {
+    q: "Do I have to move to Lexiphanic?",
+    a: "No. The audit stands on its own. If you later want a rebuild or a move, the report gives us a shared starting point and a clear list of what would need to be preserved.",
+  },
 ];
 ---
 
-<BaseLayout title="Website migration audit" description={auditDescription} path="/">
+<BaseLayout title="Website audit" description={auditDescription} path="/">
   <main id="main">
     <!-- Hero -->
     <section id="audit" class="relative overflow-hidden pt-[clamp(8rem,14vw,11rem)] pb-[clamp(4rem,8vw,7rem)]">
       <div class="mx-auto grid w-[min(1200px,100%-3rem)] grid-cols-1 items-start gap-[clamp(2.5rem,6vw,5rem)] min-[980px]:grid-cols-[1.15fr_0.85fr]">
         <div>
-          <p class="eyebrow">Website migration audit</p>
+          <p class="eyebrow">Website audit</p>
           <h1 class="mt-5 max-w-[18ch] font-display text-[clamp(2.6rem,6vw,4.6rem)] leading-[1.02] font-semibold tracking-[-0.03em] text-cream">
-            Is your site ready to <span class="text-violet-300">move?</span>
+            This is your site, <span class="text-violet-300">right now.</span>
           </h1>
           <p class="mt-6 max-w-[48ch] text-[clamp(1rem,1.6vw,1.15rem)] leading-relaxed text-muted">
-            Enter any website. We check the things that decide whether a migration is clean or expensive:
+            Enter any website. We check what visitors, browsers and search engines actually get:
             HTTPS and the certificate, www and apex, metadata, HSTS, <span class="text-lilac-100">llms.txt</span>,
-            <span class="text-lilac-100">security.txt</span>, well-known files, headers and more.
+            <span class="text-lilac-100">security.txt</span>, well-known files, headers, performance and the platform behind it.
           </p>
 
           <form method="post" action="/api/reports" class="mt-8" data-audit-form>
@@ -123,7 +127,7 @@ const faqs = [
             <div class="window-body">
               <div class="flex items-start justify-between gap-4 border-b border-line pb-4">
                 <div>
-                  <p class="text-[0.66rem] font-semibold tracking-[0.18em] text-violet-300 uppercase">Migration audit</p>
+                  <p class="text-[0.66rem] font-semibold tracking-[0.18em] text-violet-300 uppercase">Website audit</p>
                   <p class="mt-1 font-display text-[1.4rem] font-semibold text-cream">example.com</p>
                   <p class="mt-1 text-[0.72rem] text-muted">Checked 3 November 2026 · 110 of 144 scored checks ran</p>
                 </div>
@@ -165,7 +169,7 @@ const faqs = [
           <div class="max-w-[52ch]">
             <p class="eyebrow">What we check</p>
             <h2 class="mt-3 font-display text-[clamp(1.8rem,3.5vw,2.7rem)] leading-[1.1] font-semibold tracking-[-0.02em] text-cream">
-              {totalChecks} checks, grouped the way a migration actually fails.
+              {totalChecks} checks, grouped the way a site actually works.
             </h2>
             <p class="mt-4 text-[0.98rem] leading-relaxed text-muted">
               Most checks are ours: we fetch the pages, read the headers, parse the HTML and do the TLS
@@ -320,7 +324,7 @@ const faqs = [
           <div>
             <p class="eyebrow">Ready when you are</p>
             <h2 class="mt-3 max-w-[22ch] font-display text-[clamp(1.8rem,3.5vw,2.7rem)] leading-[1.08] font-semibold tracking-[-0.02em] text-cream">
-              Find out what the move will really take.
+              Start with what is true today.
             </h2>
           </div>
           <a class="inline-flex shrink-0 items-center gap-2 rounded-full bg-[linear-gradient(135deg,var(--color-violet-500),var(--color-violet-600))] px-7 py-3.5 text-[0.92rem] font-semibold text-white shadow-[0_12px_40px_-12px_rgba(124,58,237,0.85)] transition-all duration-300 ease-brand hover:-translate-y-0.5 hover:shadow-[0_20px_50px_-14px_rgba(139,92,246,0.95)]" href="#audit">

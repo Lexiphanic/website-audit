@@ -71,7 +71,7 @@ function legacy(html: HtmlFacts, htmlSource: string): string[] {
   return [...found];
 }
 
-/** What the site is, what it carries, and what moving it would involve. */
+/** What the site is, what it carries, and the details behind it. */
 export async function collectMigration(
   dns: DnsFacts,
   transport: TransportFacts,

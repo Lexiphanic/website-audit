@@ -71,7 +71,7 @@ const psi = performance?.psi;
       </div>
       <div class="flex flex-wrap items-start justify-between gap-6">
         <div>
-          <p class="eyebrow">Website migration audit</p>
+          <p class="eyebrow">Website audit</p>
           <h1 class="mt-4 font-display text-[clamp(2.2rem,5.5vw,4.2rem)] leading-[1.02] font-semibold tracking-[-0.03em] text-cream">
             {payload.meta.domain}
           </h1>
@@ -133,8 +133,8 @@ const psi = performance?.psi;
         <p class="eyebrow">Executive summary</p>
         <h2>{payload.summary.headline}</h2>
         <p>
-          This is a public-page audit. It is designed to show what a migration would inherit, not to
-          score the site for its own sake. The findings below are the ones to discuss first.
+          This is a public-page snapshot. It shows what the site is doing today, not what it could be.
+          The findings below are the ones to discuss first.
         </p>
         {payload.meta.coverage.checked < payload.meta.coverage.total && (
           <p class="report-note">
@@ -201,7 +201,7 @@ const psi = performance?.psi;
             </table>
           </div>
           <p class="report-note">
-            A clean migration has one canonical host and one redirect hop. Two 200s at the apex and www means
+            A clean setup has one canonical host and one redirect hop. Two 200s at the apex and www means
             duplicate content even if a canonical tag agrees with itself.
           </p>
         </div>
@@ -337,22 +337,22 @@ const psi = performance?.psi;
       </div>
     </section>
 
-    <!-- Migration notes -->
-    <section class="report-section" id="migration">
+    <!-- Site profile -->
+    <section class="report-section" id="profile">
       <div class="report-section-head">
-        <p class="eyebrow">Migration notes</p>
-        <h2>What moving this site would involve.</h2>
-        <p>These are the facts we would take into a migration kick-off: platform, hosting, content, email and DNS.</p>
+        <p class="eyebrow">Site profile</p>
+        <h2>What this site is made of.</h2>
+        <p>The platform, hosting, content, email and domain facts behind the pages.</p>
       </div>
 
       <div class="mt-8 grid grid-cols-1 gap-4 min-[760px]:grid-cols-2 min-[1080px]:grid-cols-3">
         {[
           ["Platform", migration?.platform ?? "Unknown", migration?.platformConfidence === "low" ? "Low confidence" : `${migration?.platformConfidence ?? "—"} confidence`],
           ["Hosting", migration?.hosting ?? "Unknown", "DNS, CDN and edge headers"],
-          ["Pages in sitemap", migration?.pageCount ? String(migration.pageCount) : "Not available", "The URL inventory to redirect"],
-          ["Email", migration?.emailProvider ?? "Unknown", "MX, SPF, DKIM and DMARC must survive"],
+          ["Pages in sitemap", migration?.pageCount ? String(migration.pageCount) : "Not available", "The current URL inventory"],
+          ["Email", migration?.emailProvider ?? "Unknown", "MX, SPF, DKIM and DMARC in place"],
           ["Registrar", migration?.registrar ?? "Unknown", migration?.domainExpires ? `Expires ${new Date(migration.domainExpires).toLocaleDateString("en-GB")}` : "Registry data unavailable"],
-          ["Languages", migration?.languages.length ? migration.languages.join(", ") : "Single language", "URL and hreflang mapping"],
+          ["Languages", migration?.languages.length ? migration.languages.join(", ") : "Single language", "URL and hreflang structure"],
         ].map(([title, value, note]) => (
           <div class="report-panel">
             <h3 class="report-panel-title">{title}</h3>
@@ -412,10 +412,10 @@ const psi = performance?.psi;
       <div class="report-panel mt-5">
         <h3 class="report-panel-title">What we would do next</h3>
         <ol class="report-next mt-3">
-          <li><b>Inventory the URLs.</b> Export the sitemap and crawl the rest; map every old URL to its new home before launch.</li>
-          <li><b>Freeze the moving parts.</b> Record the current DNS, MX, SPF, DKIM, DMARC, analytics tags and third-party embeds.</li>
-          <li><b>Rebuild on the canonical host.</b> Keep one host, one certificate and one redirect policy from day one.</li>
-          <li><b>Launch with evidence.</b> Re-run this audit after the move and compare the two reports.</li>
+          <li><b>Fix the highest-impact findings first.</b> Work down from critical and high before polishing the rest.</li>
+          <li><b>Keep a baseline.</b> Re-run the audit after changes and compare the two reports.</li>
+          <li><b>If you rebuild or move.</b> Inventory the URLs, freeze DNS, email, analytics and embeds, and keep one canonical host from day one.</li>
+          <li><b>Ask us if you want a hand.</b> We can turn the findings into a fix list, a rebuild or a move.</li>
         </ol>
       </div>
     </section>
@@ -424,13 +424,14 @@ const psi = performance?.psi;
     <section class="report-section report-cta" id="next">
       <div>
         <p class="eyebrow">Next step</p>
-        <h2>We can move it for you.</h2>
+        <h2>If you want a hand with any of this.</h2>
         <p>
-          Lexiphanic builds and migrates bespoke sites from {site.pricing.setup} setup plus {site.pricing.monthly}/month.
-          If you want the findings above turned into a migration plan, email {site.email} or call {site.phoneDisplay}.
+          Lexiphanic builds and looks after bespoke sites from {site.pricing.setup} setup plus {site.pricing.monthly}/month.
+          Most people use the audit on its own. If you would like the findings turned into a fix list, a rebuild or a move,
+          email {site.email} or call {site.phoneDisplay}.
         </p>
       </div>
-      <a class="report-button" href={`mailto:${site.email}?subject=${encodeURIComponent(`Migration audit: ${payload.meta.domain}`)}`}>
+      <a class="report-button" href={`mailto:${site.email}?subject=${encodeURIComponent(`Website audit: ${payload.meta.domain}`)}`}>
         Talk to Lexiphanic
       </a>
     </section>

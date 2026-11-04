@@ -107,11 +107,11 @@ export function scoreChecks(results: CheckResult[]): {
 
 function headlineFor(score: number | null): string {
   if (score === null) return "The audit completed with limited coverage.";
-  if (score >= 90) return "The site is in good shape for a migration.";
-  if (score >= 80) return "A solid site with a few things to fix before it moves.";
-  if (score >= 70) return "Workable, but the migration will need some cleanup.";
-  if (score >= 60) return "Several issues would make this migration risky.";
-  return "This site needs remediation before a move.";
+  if (score >= 90) return "The site is in good shape.";
+  if (score >= 80) return "A solid site with a few things worth fixing.";
+  if (score >= 70) return "Workable, with some cleanup worth doing.";
+  if (score >= 60) return "Several issues are holding the site back.";
+  return "This site needs attention.";
 }
 
 function trimFacts(facts: AuditFacts): AuditFacts {

@@ -16,7 +16,7 @@ const steps = [
   ["files", "Crawl and well-known files"],
   ["security", "Security headers and email"],
   ["performance", "Performance"],
-  ["migration", "Migration notes"],
+  ["migration", "Site profile"],
   ["tls-grade", "TLS grade"],
   ["score", "Scoring"],
   ["persist", "Saving the report"],
@@ -31,7 +31,7 @@ const statusUrl = `/api/reports/${domain}/status`;
 ---
 
 <section class="mx-auto w-[min(900px,100%-3rem)] pt-[clamp(7rem,12vw,10rem)] pb-24" data-audit-status data-url={statusUrl}>
-  <p class="eyebrow">Website migration audit</p>
+  <p class="eyebrow">Website audit</p>
   <h1 class="mt-4 font-display text-[clamp(2rem,5vw,3.4rem)] leading-[1.05] font-semibold tracking-[-0.02em] text-cream">
     {domain}
   </h1>
