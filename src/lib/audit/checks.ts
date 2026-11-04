@@ -63,6 +63,15 @@ function statusOk(status: number): boolean {
   return status >= 200 && status < 400;
 }
 
+/** CA/Browser Forum maximum certificate lifetime for the issuance date. */
+function certLifetimeLimit(issuedAt: number): number {
+  if (!issuedAt) return 398;
+  if (issuedAt >= Date.UTC(2029, 2, 15)) return 47;
+  if (issuedAt >= Date.UTC(2027, 2, 15)) return 100;
+  if (issuedAt >= Date.UTC(2026, 2, 15)) return 200;
+  return 398;
+}
+
 function ms(value: string): number | null {
   const match = /([\d.]+)\s*(ms|s)?/i.exec(value ?? "");
   if (!match) return null;
@@ -93,6 +102,7 @@ export function transportChecks(facts: AuditFacts): CheckResult[] {
       "hsts-subdomains", "hsts-preload", "hsts-preload-list", "ipv6",
       "http2", "http3", "mixed-content", "tls-grade", "tls-ocsp-stapling",
       "tls-forward-secrecy", "cert-key-strength", "cert-signature", "cert-revocation",
+      "cert-lifetime",
     ].map((key) => skip(key, "Transport checks could not run"));
   }
 
@@ -313,6 +323,18 @@ export function transportChecks(facts: AuditFacts): CheckResult[] {
           : keySize >= 2048
             ? pass("cert-key-strength", `${keyAlg} ${keySize}`)
             : fail("cert-key-strength", `${keyAlg} ${keySize}`),
+  );
+
+  const validFrom = cert?.validFrom ? new Date(cert.validFrom).valueOf() : 0;
+  const validTo = cert?.validTo ? new Date(cert.validTo).valueOf() : 0;
+  const lifetimeDays = validFrom && validTo ? Math.round((validTo - validFrom) / 86_400_000) : 0;
+  const lifetimeLimit = certLifetimeLimit(validFrom);
+  results.push(
+    !cert || !lifetimeDays
+      ? skip("cert-lifetime", "Certificate dates unavailable")
+      : lifetimeDays > lifetimeLimit
+        ? warn("cert-lifetime", `${lifetimeDays} days; the CA/B limit is ${lifetimeLimit} for this issue date`)
+        : pass("cert-lifetime", `${lifetimeDays} days (limit ${lifetimeLimit})`),
   );
 
   const sigAlg = cert?.sigAlg ?? "";
@@ -874,12 +896,24 @@ export function securityChecks(facts: AuditFacts): CheckResult[] {
   );
   const insecureForms = s.forms.filter((form) => form.insecure);
   results.push(insecureForms.length ? fail("forms-https", `${insecureForms.length} form${insecureForms.length === 1 ? "" : "s"} post over HTTP`) : pass("forms-https", s.forms.length ? "All forms post over HTTPS" : "No forms to test"));
-  results.push(s.trackers.length ? info("trackers", s.trackers.join(", ")) : pass("trackers", "No third-party trackers detected"));
+  // Prefer the richer detector used by the third-party section so the
+  // appendix and the report agree. Fall back to the homepage fingerprints.
+  const detectedProviders = facts.files?.thirdParties?.providers ?? [];
+  const detectedTrackers = detectedProviders
+    .filter((provider) =>
+      ["advertising", "analytics", "tag-manager", "session-replay"].includes(provider.category),
+    )
+    .map((provider) => provider.name);
+  const trackers = [...new Set(detectedTrackers.length ? detectedTrackers : s.trackers)];
+  const consentTools = [
+    ...new Set([...(facts.files?.thirdParties?.consent ?? []), ...s.consent]),
+  ];
+  results.push(trackers.length ? info("trackers", trackers.join(", ")) : pass("trackers", "No third-party trackers detected"));
   results.push(
-    s.trackers.length && !s.consent.length
+    trackers.length && !consentTools.length
       ? warn("consent", "Trackers are present but no consent tool was detected")
-      : s.consent.length
-        ? pass("consent", s.consent.join(", "))
+      : consentTools.length
+        ? pass("consent", consentTools.join(", "))
         : pass("consent", "No trackers requiring consent detected"),
   );
 
@@ -895,16 +929,22 @@ export function securityChecks(facts: AuditFacts): CheckResult[] {
   results.push(s.legal.accessibility ? pass("accessibility-page", "Accessibility statement found") : info("accessibility-page", "No accessibility statement found"));
 
   const e = d?.email;
+  const voidLookups = e?.spf.voidLookups ?? 0;
+  const voidNote = voidLookups ? ` · ${voidLookups} void` : "";
   results.push(
     !e?.spf.present
       ? fail("spf", "No SPF record")
-      : e.spf.lookupCount > 10
-        ? warn("spf", `SPF has ${e.spf.lookupCount} DNS lookups; the limit is 10`)
-        : e.spf.qualifier === "-"
-          ? pass("spf", "SPF ends with -all")
-          : e.spf.qualifier === "~"
-            ? pass("spf", "SPF ends with ~all")
-            : warn("spf", `SPF ends with ${e.spf.qualifier || "no explicit all"}all`),
+      : voidLookups > 2
+        ? fail("spf", `${e.spf.lookupCount} DNS lookups, ${voidLookups} void (void limit 2)`)
+        : e.spf.lookupCount > 10
+          ? fail("spf", `${e.spf.lookupCount} DNS lookups (limit 10)${voidNote}`)
+          : e.spf.lookupCount > 8
+            ? warn("spf", `${e.spf.lookupCount} DNS lookups; 10 is the limit${voidNote}`)
+            : e.spf.qualifier === "-"
+              ? pass("spf", `SPF ends with -all${voidNote}`)
+              : e.spf.qualifier === "~"
+                ? pass("spf", `SPF ends with ~all${voidNote}`)
+                : warn("spf", `SPF ends with ${e.spf.qualifier || "no explicit all"}all${voidNote}`),
   );
   results.push(e?.dkimSelectors.length ? pass("dkim", `Selectors: ${e.dkimSelectors.join(", ")}`) : warn("dkim", "No common DKIM selector found"));
   results.push(
@@ -986,7 +1026,7 @@ export function performanceChecks(facts: AuditFacts): CheckResult[] {
   const results: CheckResult[] = [];
   results.push(p.ttfbMs < 500 ? pass("ttfb", `${p.ttfbMs} ms`) : p.ttfbMs < 1000 ? warn("ttfb", `${p.ttfbMs} ms`) : fail("ttfb", `${p.ttfbMs} ms`));
   results.push(p.htmlBytes < 100_000 ? pass("html-size", `${Math.round(p.htmlBytes / 1024)} KB`) : p.htmlBytes < 200_000 ? warn("html-size", `${Math.round(p.htmlBytes / 1024)} KB`) : fail("html-size", `${Math.round(p.htmlBytes / 1024)} KB`));
-  results.push(/br|gzip|deflate/i.test(p.contentEncoding) ? pass("compression", p.contentEncoding) : warn("compression", p.contentEncoding || "No compression"));
+  results.push(/br|gzip|deflate|zstd/i.test(p.contentEncoding) ? pass("compression", p.contentEncoding) : warn("compression", p.contentEncoding || "No compression"));
   results.push(p.renderBlocking <= 3 ? pass("render-blocking", `${p.renderBlocking} blocking asset${p.renderBlocking === 1 ? "" : "s"}`) : p.renderBlocking <= 6 ? warn("render-blocking", `${p.renderBlocking} blocking assets`) : fail("render-blocking", `${p.renderBlocking} blocking assets`));
   results.push(
     !p.assetBytes
@@ -1015,7 +1055,11 @@ export function performanceChecks(facts: AuditFacts): CheckResult[] {
         ? fail("font-display", p.fontDisplay)
         : info("font-display", p.fontDisplay),
   );
-  results.push(p.thirdPartyDomains.length <= 3 ? pass("third-parties", `${p.thirdPartyDomains.length} third-party domain${p.thirdPartyDomains.length === 1 ? "" : "s"}`) : p.thirdPartyDomains.length <= 8 ? warn("third-parties", `${p.thirdPartyDomains.length} third-party domains`) : fail("third-parties", `${p.thirdPartyDomains.length} third-party domains`));
+  // Use the same sampled set as the third-party section, so the scored count
+  // and the inventory do not tell different stories.
+  const thirdPartyDomains =
+    facts.files?.thirdParties?.domains.length ?? p.thirdPartyDomains.length;
+  results.push(thirdPartyDomains <= 3 ? pass("third-parties", `${thirdPartyDomains} third-party domain${thirdPartyDomains === 1 ? "" : "s"}`) : thirdPartyDomains <= 8 ? warn("third-parties", `${thirdPartyDomains} third-party domains`) : fail("third-parties", `${thirdPartyDomains} third-party domains`));
   results.push(p.domSize < 1500 ? pass("dom-size", `${p.domSize} elements`) : p.domSize < 3000 ? warn("dom-size", `${p.domSize} elements`) : fail("dom-size", `${p.domSize} elements`));
   results.push(/max-age|immutable|public/i.test(p.cacheControl) ? pass("caching", p.cacheControl) : warn("caching", p.cacheControl || "No Cache-Control"));
   results.push(p.cdn !== "None detected" ? pass("cdn", p.cdn) : warn("cdn", "No CDN detected"));

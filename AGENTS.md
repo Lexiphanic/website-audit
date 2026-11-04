@@ -39,8 +39,8 @@ Use Bun for everything. Verify with `bun run check`, `bun run test` and
   `AuditWorkflow`.
 - **Cloudflare Workflows** (`AUDIT_WORKFLOW`) runs the audit as durable steps:
   DNS → transport/TLS → content → files → security → performance → migration →
-  TLS polling → score → persist. Each step has retries; a phase that still fails
-  returns a fallback so the report completes with "not checked" checks.
+  score → persist. Each step has retries; a phase that still fails returns a
+  fallback so the report completes with "not checked" checks.
 - **D1** (`DB`) stores one row per domain in `reports`. The full report is JSON
   in `payload_json`, capped below D1's 100 KB statement limit. `report_date` is
   the date the report was generated and is not part of the URL or uniqueness key.
@@ -56,6 +56,7 @@ Use Bun for everything. Verify with `bun run check`, `bun run test` and
 | Workflow pipeline | `src/lib/workflow/audit.ts` |
 | Check metadata and copy | `src/lib/audit/registry.ts` |
 | Technology fingerprints | `src/lib/audit/fingerprints.ts` |
+| Third-party and edge detection | `src/lib/audit/third-parties.ts` |
 | Facts collectors | `src/lib/audit/{dns,transport,html,files,security,performance,migration,tls}.ts` |
 | Check evaluation | `src/lib/audit/checks.ts` |
 | Scoring and payload trimming | `src/lib/audit/score.ts` |
@@ -89,10 +90,13 @@ the noindex. The landing page is indexable.
   `ALPNProtocols` are reported as unimplemented. TLS therefore comes from SSL
   Labs with a crt.sh certificate fallback. Do not reintroduce `node:tls` for
   public hosts.
-- **SSL Labs is async.** A first scan takes about a minute. The Workflow polls
-  with sleeps; the report may complete with a pending grade. SSL Labs caches for
-  24 hours. It is rate-limited; handle `429` as "not checked", never a failure.
-- **crt.sh is flaky.** It is a fallback for the certificate, not the only source.
+- **SSL Labs is async.** A first scan can take minutes. The Workflow does not
+  sleep waiting for it: the report completes with a pending grade and a later
+  run picks up the cached result. SSL Labs caches for 24 hours. It is
+  rate-limited; handle `429` as "not checked", never a failure.
+- **crt.sh is flaky.** It is only called when SSL Labs has no certificate, and
+  its short timeout keeps a failure cheap. It is a fallback, not the only
+  source.
 - **D1's statement limit is 100 KB.** `buildReport` trims evidence and then
   large fact arrays. Keep `MAX_PAYLOAD_BYTES` in `score.ts` below 100 KB.
 - **One row per domain.** `0002_latest_only.sql` rebuilds the table with
@@ -118,6 +122,15 @@ the noindex. The landing page is indexable.
   are hidden in print so the PDF stays readable.
 - **No analytics, no cookies, no accounts.** Do not add tracking. Turnstile is
   the only third-party request on the landing page.
+- **Third parties are documented in three places.** `README.md`, this file and
+  `/privacy` list Cloudflare, Google DoH, RDAP, SSL Labs, crt.sh,
+  hstspreload.org and optional PageSpeed Insights. Adding an outbound service
+  means updating all three, and scan requests must never carry the visitor's IP
+  address.
+- **Third-party detection is informational.** The third-party section reads the
+  homepage and up to five sampled HTML pages from the sitemap without executing
+  JavaScript. Do not turn tracker or CDN findings into scored warnings;
+  `trackers` and `consent` are weight 0.
 - **Public scan safety.** Keep the SSRF guard (`src/lib/audit/ssrf.ts`) on every
   request and redirect. Do not add features that scan private hosts, log in,
   submit forms or test for vulnerabilities.

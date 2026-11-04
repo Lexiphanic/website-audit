@@ -117,11 +117,15 @@ export async function collectTransport(
     }
   })();
 
-  const [crtCertificate, labs] = await Promise.all([
-    certificateFromCrt(domain),
+  // SSL Labs answers from its 24-hour cache in under a second and includes the
+  // certificate. crt.sh is only the fallback when Labs has nothing yet (a cold
+  // cache or a scan still in progress); it is flaky and can take seconds per
+  // attempt, so do not pay for it on every run.
+  const [labs, preload] = await Promise.all([
     startLabs(tlsHost),
+    preloadStatus(domain),
   ]);
-  const preload = await preloadStatus(domain);
+  const crtCertificate = labs.certificate ? null : await certificateFromCrt(domain);
   const apexTls = tlsFromLabs(labs, crtCertificate);
   const wwwTls = wwwReachable ? apexTls : null;
 

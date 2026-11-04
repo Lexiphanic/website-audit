@@ -2,7 +2,8 @@ import { parseHTML } from "linkedom";
 import { cleanText, sha256 } from "../util";
 import { fetchBytes } from "./fetch";
 import { detectFingerprints } from "./fingerprints";
-import type { HtmlFacts, HtmlImageFact, HtmlScriptFact } from "./types";
+import { detectThirdParties } from "./third-parties";
+import type { HtmlFacts, HtmlImageFact, HtmlScriptFact, ThirdPartyFacts } from "./types";
 
 function metaMap(document: Document): Map<string, string[]> {
   const map = new Map<string, string[]>();
@@ -185,7 +186,7 @@ export async function collectHtml(
   finalUrl: string,
   status: number,
   headers: Record<string, string> = {},
-): Promise<HtmlFacts> {
+): Promise<{ html: HtmlFacts; thirdParties: ThirdPartyFacts }> {
   const contentType = headers["content-type"] ?? "";
   const prefix = html.slice(0, 300).toLowerCase();
   if (status >= 400) {
@@ -360,7 +361,7 @@ export async function collectHtml(
     }
   }
 
-  return {
+  const facts: HtmlFacts = {
     finalUrl,
     status,
     title: cleanText(document.querySelector("title")?.textContent, 200),
@@ -414,4 +415,26 @@ export async function collectHtml(
     ogImageType,
     bodyHash: await sha256(html),
   };
+
+  const iframes = Array.from(document.querySelectorAll("iframe[src]"))
+    .map((iframe) => iframe.getAttribute("src") ?? "")
+    .filter(Boolean);
+  const hints = Array.from(
+    document.querySelectorAll('link[rel="preconnect"][href], link[rel="dns-prefetch"][href]'),
+  )
+    .map((link) => link.getAttribute("href") ?? "")
+    .filter(Boolean);
+
+  const thirdParties = detectThirdParties({
+    url: finalUrl,
+    headers,
+    htmlSource: html,
+    scripts: facts.scripts.map((script) => script.src),
+    stylesheets: facts.stylesheets,
+    images: facts.images.map((image) => image.src),
+    iframes,
+    hints,
+  });
+
+  return { html: facts, thirdParties };
 }

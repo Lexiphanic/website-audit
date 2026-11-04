@@ -99,7 +99,80 @@ function parseSpf(records: string[]): EmailAuthFacts["spf"] {
     record,
     qualifier: all ? all[0] : "",
     lookupCount,
+    voidLookups: 0,
   };
+}
+
+interface SpfMechanism {
+  kind: "include" | "redirect" | "lookup";
+  value: string;
+}
+
+function spfMechanisms(record: string): SpfMechanism[] {
+  const mechanisms: SpfMechanism[] = [];
+  for (const token of record.split(/\s+/).slice(1)) {
+    const bare = token.replace(/^[+\-~?]/, "");
+    if (/^include:/i.test(bare)) mechanisms.push({ kind: "include", value: bare.slice(8) });
+    else if (/^redirect=/i.test(bare)) mechanisms.push({ kind: "redirect", value: bare.slice(9) });
+    else if (/^exists:/i.test(bare)) mechanisms.push({ kind: "lookup", value: bare.slice(7) });
+    else if (/^a(:|$)/i.test(bare)) mechanisms.push({ kind: "lookup", value: bare.slice(2) });
+    else if (/^mx(:|$)/i.test(bare)) mechanisms.push({ kind: "lookup", value: bare.slice(3) });
+    else if (/^ptr(:|$)/i.test(bare)) mechanisms.push({ kind: "lookup", value: bare.slice(4) });
+    // exp= is a modifier, not a mechanism, and does not count towards the limit.
+  }
+  // RFC 7208 ignores redirect= when an all mechanism is present.
+  const hasAll = record.split(/\s+/).some((token) => /^[+\-~?]?all$/i.test(token));
+  return hasAll ? mechanisms.filter((mechanism) => mechanism.kind !== "redirect") : mechanisms;
+}
+
+/**
+ * Count the DNS lookups an SPF record costs, following include: and redirect=
+ * up to ten levels. RFC 7208's limit is ten. `mx` counts as one term here, so a
+ * record with several MX hosts can cost more than this estimate.
+ */
+async function spfLookupBudget(
+  domain: string,
+  rootRecord: string,
+): Promise<{ total: number; voidLookups: number }> {
+  let total = 0;
+  let voidLookups = 0;
+  const seen = new Set([domain]);
+  let frontier: { domain: string; record: string }[] = [{ domain, record: rootRecord }];
+
+  for (let depth = 0; depth < 10 && frontier.length; depth += 1) {
+    const targets: string[] = [];
+    for (const item of frontier) {
+      for (const mechanism of spfMechanisms(item.record)) {
+        total += 1;
+        if (mechanism.kind === "lookup") continue;
+        const target = mechanism.value
+          .replace(/^\*\./, "")
+          .replace(/\/.*$/, "")
+          .toLowerCase();
+        if (!target || target.includes("%") || seen.has(target)) continue;
+        seen.add(target);
+        targets.push(target);
+      }
+    }
+
+    const fetched = await Promise.all(
+      targets.map(async (target) => ({
+        target,
+        records: await answersFor(target, "TXT"),
+      })),
+    );
+    const next: { domain: string; record: string }[] = [];
+    for (const entry of fetched) {
+      const record = entry.records
+        .map((value) => txtValue([value]))
+        .find((value) => /^v=spf1\b/i.test(value));
+      if (record) next.push({ domain: entry.target, record });
+      else voidLookups += 1;
+    }
+    frontier = next;
+  }
+
+  return { total, voidLookups };
 }
 
 function parseDmarc(records: string[]): EmailAuthFacts["dmarc"] {
@@ -125,13 +198,29 @@ const DKIM_SELECTORS = [
   "google",
   "selector1",
   "selector2",
+  "selector3",
+  "key1",
+  "key2",
   "k1",
+  "k2",
   "s1",
   "s2",
   "mail",
   "dkim",
   "smtp",
   "mandrill",
+  "migadu",
+  "mailjet",
+  "zoho",
+  "mcsv",
+  "sendgrid",
+  "mailgun",
+  "postmark",
+  "resend",
+  "amazonses",
+  "klaviyo",
+  "hubspot",
+  "mailchimp",
   "everlytickey1",
   "everlytickey2",
   "cm",
@@ -232,6 +321,13 @@ export async function collectDns(domain: string): Promise<DnsFacts> {
     ]);
 
   const txtRecords = txt.map((value) => txtValue([value]));
+  const spf = parseSpf(txtRecords);
+  // parseSpf gives a flat count; follow includes and redirects for the limit.
+  const spfBudget = spf.present
+    ? await spfLookupBudget(domain, spf.record)
+    : { total: 0, voidLookups: 0 };
+  spf.lookupCount = spfBudget.total;
+  spf.voidLookups = spfBudget.voidLookups;
   const records: DnsRecords = {
     a,
     aaaa,
@@ -256,7 +352,7 @@ export async function collectDns(domain: string): Promise<DnsFacts> {
 
   const email: EmailAuthFacts = {
     spfRecords: txtRecords.filter((value) => /^v=spf1\b/i.test(value.trim())),
-    spf: parseSpf(txtRecords),
+    spf,
     dmarc: parseDmarc(dmarcTxt.map((value) => txtValue([value]))),
     dkimSelectors,
     bimi: bimiTxt.map((value) => txtValue([value])).some((value) => /v=BIMI1/i.test(value)),
