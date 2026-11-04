@@ -966,7 +966,7 @@ export function securityChecks(facts: AuditFacts): CheckResult[] {
       ? skip("dmarc-reporting", "No DMARC record")
       : e.dmarc.rua
         ? pass("dmarc-reporting", "rua reporting configured")
-        : warn("dmarc-reporting", "No rua reporting address"),
+        : info("dmarc-reporting", "No rua= report address (optional)"),
   );
   results.push(
     !e?.dmarc.present
