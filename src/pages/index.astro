@@ -125,7 +125,7 @@ const faqs = [
                 <div>
                   <p class="text-[0.66rem] font-semibold tracking-[0.18em] text-violet-300 uppercase">Migration audit</p>
                   <p class="mt-1 font-display text-[1.4rem] font-semibold text-cream">example.com</p>
-                  <p class="mt-1 text-[0.72rem] text-muted">Checked 3 November 2026 · 110 of 144 scored checks ran</p>
+                  <p class="mt-1 text-[0.72rem] text-muted">Checked 3 November 2026 · 140 of 173 scored checks ran</p>
                 </div>
                 <div class="grid h-[74px] w-[74px] shrink-0 place-items-center rounded-full border border-violet-400/40 bg-violet-600/15">
                   <div class="text-center">
@@ -168,8 +168,8 @@ const faqs = [
               {totalChecks} checks, grouped the way a migration actually fails.
             </h2>
             <p class="mt-4 text-[0.98rem] leading-relaxed text-muted">
-              Most checks are ours: we fetch the pages, read the headers, parse the HTML and do the TLS
-              handshake. We only call an outside service where a Worker genuinely cannot see the answer.
+              Most checks are ours: we fetch the pages, read the headers, parse the HTML and inspect the
+              certificate. We only call an outside service where a Worker genuinely cannot see the answer.
             </p>
           </div>
           <a class="inline-flex items-center gap-2 rounded-full border border-line-strong px-5 py-2.5 text-[0.85rem] text-cream transition-all duration-300 ease-brand hover:border-violet-500 hover:bg-violet-600/20" href="/reports/lexiphanic.co.uk">

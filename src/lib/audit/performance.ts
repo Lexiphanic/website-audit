@@ -1,4 +1,5 @@
 import { fetchText, probeStatus } from "./fetch";
+import { detectEdge } from "./third-parties";
 import type {
   HtmlFacts,
   PerformanceFacts,
@@ -7,14 +8,7 @@ import type {
 } from "./types";
 
 function detectCdn(headers: Record<string, string>): string {
-  if (headers["cf-ray"] || /cloudflare/i.test(headers.server ?? "")) return "Cloudflare";
-  if (headers["x-vercel-id"] || headers["x-vercel-cache"]) return "Vercel";
-  if (headers["x-nf-request-id"] || headers["x-netlify-id"]) return "Netlify";
-  if (headers["x-amz-cf-id"] || headers["x-amz-cf-pop"]) return "Amazon CloudFront";
-  if (headers["x-fastly-request-id"] || headers["x-served-by"]) return "Fastly";
-  if (headers["x-github-request-id"]) return "GitHub Pages";
-  if (headers["x-akamai-transformed"]) return "Akamai";
-  return "None detected";
+  return detectEdge(headers)?.name ?? "None detected";
 }
 
 function absolute(value: string, base: string): string {
@@ -108,7 +102,9 @@ async function collectPsi(domain: string, apiKey: string): Promise<PsiFacts | nu
   const url = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(`https://${domain}/`)}&strategy=mobile&${categories}&key=${encodeURIComponent(apiKey)}`;
 
   try {
-    const response = await fetch(url, { signal: AbortSignal.timeout(70_000) });
+    // PageSpeed can take 30-60 seconds on a cold profile; the step timeout is
+    // 120 seconds, so give it room rather than turning a slow run into "not run".
+    const response = await fetch(url, { signal: AbortSignal.timeout(60_000) });
     if (!response.ok) {
       return {
         performance: null,

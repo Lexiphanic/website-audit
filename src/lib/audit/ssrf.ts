@@ -48,9 +48,50 @@ export function isBlockedHostname(hostname: string): boolean {
   return BLOCKED_SUFFIXES.some((suffix) => host.endsWith(suffix));
 }
 
+/**
+ * A scan asks about the same host dozens of times (every probe and every
+ * well-known path runs through the guard). Keep a successful resolution for a
+ * minute so those calls do not each make three DoH requests. The cache only
+ * holds hosts that already resolved to public addresses.
+ *
+ * A rebinding attacker could change the name within that minute, so keep the
+ * TTL short. The platform also refuses private egress and every fetch resolves
+ * independently; the cache is a cost saver, not a substitute for the guard.
+ */
+const RESOLUTION_TTL_MS = 60_000;
+const MAX_RESOLUTIONS = 256;
+const resolutions = new Map<string, { addresses: string[]; expires: number }>();
+
+function cachedResolution(host: string): string[] | null {
+  const entry = resolutions.get(host);
+  if (!entry) return null;
+  if (entry.expires <= Date.now()) {
+    resolutions.delete(host);
+    return null;
+  }
+  return entry.addresses;
+}
+
+function rememberResolution(host: string, addresses: string[]): void {
+  if (!addresses.length) return;
+  const now = Date.now();
+  for (const [key, entry] of resolutions) {
+    if (entry.expires <= now) resolutions.delete(key);
+  }
+  if (resolutions.size >= MAX_RESOLUTIONS) {
+    const oldest = resolutions.keys().next().value;
+    if (oldest) resolutions.delete(oldest);
+  }
+  resolutions.set(host, { addresses: [...addresses], expires: now + RESOLUTION_TTL_MS });
+}
+
 /** Resolve a hostname through DoH and return every address it points at. */
 export async function resolveHost(hostname: string): Promise<string[]> {
   const host = hostname.replace(/^\[|\]$/g, "").replace(/\.$/, "").toLowerCase();
+
+  const cached = cachedResolution(host);
+  if (cached) return [...cached];
+
   const [a, aaaa, cname] = await Promise.all([
     dohQuery(host, "A").catch(() => null),
     dohQuery(host, "AAAA").catch(() => null),
@@ -58,22 +99,36 @@ export async function resolveHost(hostname: string): Promise<string[]> {
   ]);
 
   const addresses = new Set<string>();
-  for (const answer of a?.answers ?? []) addresses.add(answer.data.replace(/\.$/, ""));
-  for (const answer of aaaa?.answers ?? []) addresses.add(answer.data.replace(/\.$/, ""));
+  for (const answer of a?.answers ?? []) {
+    const value = answer.data.replace(/\.$/, "");
+    if (isIpLiteral(value)) addresses.add(value);
+  }
+  for (const answer of aaaa?.answers ?? []) {
+    const value = answer.data.replace(/\.$/, "");
+    if (isIpLiteral(value)) addresses.add(value);
+  }
 
   // If the name is a CNAME, follow the target once. DoH normally includes the
   // final A/AAAA answers too, but not every resolver does.
-  const alias = cname?.answers[0]?.data?.replace(/\.$/, "");
+  const alias = cname?.answers.find((answer) => answer.type === 5)?.data?.replace(/\.$/, "");
   if (alias && alias !== host) {
     const [aliasA, aliasAaaa] = await Promise.all([
       dohQuery(alias, "A").catch(() => null),
       dohQuery(alias, "AAAA").catch(() => null),
     ]);
-    for (const answer of aliasA?.answers ?? []) addresses.add(answer.data.replace(/\.$/, ""));
-    for (const answer of aliasAaaa?.answers ?? []) addresses.add(answer.data.replace(/\.$/, ""));
+    for (const answer of aliasA?.answers ?? []) {
+      const value = answer.data.replace(/\.$/, "");
+      if (isIpLiteral(value)) addresses.add(value);
+    }
+    for (const answer of aliasAaaa?.answers ?? []) {
+      const value = answer.data.replace(/\.$/, "");
+      if (isIpLiteral(value)) addresses.add(value);
+    }
   }
 
-  return [...addresses];
+  const resolved = [...addresses];
+  rememberResolution(host, resolved);
+  return resolved;
 }
 
 /**

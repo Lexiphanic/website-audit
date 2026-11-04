@@ -1,4 +1,7 @@
 import type {
+  DaneFact,
+  DkimKeyFact,
+  DmarcExternalReportFact,
   DnsFacts,
   DnsRecords,
   EmailAuthFacts,
@@ -49,10 +52,27 @@ export async function dohQuery(
   throw lastError instanceof Error ? lastError : new Error("DNS lookup failed");
 }
 
+const RECORD_TYPES: Record<string, number> = {
+  A: 1,
+  NS: 2,
+  CNAME: 5,
+  SOA: 6,
+  MX: 15,
+  TXT: 16,
+  AAAA: 28,
+  DS: 43,
+  DNSKEY: 48,
+  TLSA: 52,
+  CAA: 257,
+};
+
 async function answersFor(name: string, type: string): Promise<string[]> {
   try {
     const result = await dohQuery(name, type);
-    return result.answers.map((answer) => answer.data);
+    const code = RECORD_TYPES[type.toUpperCase()];
+    return result.answers
+      .filter((answer) => code === undefined || answer.type === code)
+      .map((answer) => answer.data);
   } catch {
     return [];
   }
@@ -88,17 +108,18 @@ function parseCaa(values: string[]): { flags: number; tag: string; value: string
 }
 
 function parseSpf(records: string[]): EmailAuthFacts["spf"] {
-  const record = records.find((value) => /^v=spf1\b/i.test(value.trim())) ?? "";
+  const spfRecords = records.filter((value) => /^v=spf1\b/i.test(value.trim()));
+  const record = spfRecords[0] ?? "";
   const tokens = record.split(/\s+/).slice(1);
-  const lookupCount = tokens.filter((token) =>
-    /^(include:|a$|a:|mx$|mx:|ptr$|ptr:|exists:|redirect=|exp=)/i.test(token),
-  ).length;
   const all = tokens.find((token) => /^[+\-~?]?all$/i.test(token)) ?? "";
   return {
     present: Boolean(record),
     record,
+    records: spfRecords,
     qualifier: all ? all[0] : "",
-    lookupCount,
+    // The real count is measured by spfLookupBudget, which follows includes.
+    lookupCount: 0,
+    voidLookups: 0,
   };
 }
 
@@ -114,9 +135,16 @@ function parseDmarc(records: string[]): EmailAuthFacts["dmarc"] {
     record,
     policy: tags.get("p") ?? "",
     subdomainPolicy: tags.get("sp") ?? "",
-    pct: tags.has("pct") ? Number(tags.get("pct")) : null,
+    nonExistentPolicy: tags.get("np") ?? "",
+    testing: (tags.get("t") ?? "").toLowerCase() === "y",
+    pct: (tags.get("pct") ?? "").trim() ? Number(tags.get("pct")) : null,
     rua: tags.get("rua") ?? "",
     ruf: tags.get("ruf") ?? "",
+    adkim: tags.get("adkim") ?? "",
+    aspf: tags.get("aspf") ?? "",
+    fo: tags.get("fo") ?? "",
+    psd: tags.get("psd") ?? "",
+    externalReporting: [],
   };
 }
 
@@ -125,31 +153,247 @@ const DKIM_SELECTORS = [
   "google",
   "selector1",
   "selector2",
+  "selector3",
+  "key1",
+  "key2",
   "k1",
+  "k2",
   "s1",
   "s2",
   "mail",
   "dkim",
   "smtp",
   "mandrill",
+  "migadu",
+  "mailjet",
+  "zoho",
+  "mcsv",
+  "sendgrid",
+  "mailgun",
+  "postmark",
+  "resend",
+  "amazonses",
+  "klaviyo",
+  "hubspot",
+  "mailchimp",
   "everlytickey1",
   "everlytickey2",
   "cm",
   "protonmail",
 ];
 
-async function detectDkim(domain: string): Promise<string[]> {
-  const found: string[] = [];
-  await Promise.all(
+function base64ToBytes(value: string): Uint8Array<ArrayBuffer> {
+  const clean = value.replace(/\s+/g, "");
+  const binary = atob(clean);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
+}
+
+function base64UrlToBytes(value: string): Uint8Array<ArrayBuffer> {
+  const clean = value.replace(/-/g, "+").replace(/_/g, "/");
+  return base64ToBytes(clean.padEnd(Math.ceil(clean.length / 4) * 4, "="));
+}
+
+/** RSA modulus size from the DKIM p= value; null when it is not readable. */
+async function rsaKeyBits(record: string): Promise<number | null> {
+  const p = /(?:^|;)\s*p=([^;]*)/i.exec(record)?.[1]?.trim() ?? "";
+  if (!p) return null;
+  try {
+    const der = base64ToBytes(p);
+    const key = await crypto.subtle.importKey(
+      "spki",
+      der,
+      { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+      true,
+      ["verify"],
+    );
+    const jwk = (await crypto.subtle.exportKey("jwk", key)) as { n?: string };
+    return jwk.n ? base64UrlToBytes(jwk.n).length * 8 : null;
+  } catch {
+    // Some records are bare PKCS#1 rather than SPKI. Estimate from the length.
+    // A malformed p= must not reject the whole DNS phase.
+    let length = 0;
+    try {
+      length = base64ToBytes(p).length;
+    } catch {
+      return null;
+    }
+    return length >= 256 ? 2048 : length >= 128 ? 1024 : null;
+  }
+}
+
+function parseDkimKey(selector: string, record: string): DkimKeyFact {
+  const tags = new Map<string, string>();
+  for (const part of record.split(";")) {
+    const [key, ...rest] = part.trim().split("=");
+    if (key && rest.length) tags.set(key.trim().toLowerCase(), rest.join("=").trim());
+  }
+  return {
+    selector,
+    record,
+    keyType: tags.get("k") ?? "rsa",
+    bits: null,
+    revoked: !(tags.get("p") ?? "").trim(),
+    testing: (tags.get("t") ?? "")
+      .split(":")
+      .map((value) => value.trim().toLowerCase())
+      .includes("y"),
+    hashAlgorithms: (tags.get("h") ?? "")
+      .split(":")
+      .map((value) => value.trim().toLowerCase())
+      .filter(Boolean),
+  };
+}
+
+async function detectDkim(
+  domain: string,
+): Promise<{ selectors: string[]; keys: DkimKeyFact[] }> {
+  const found = await Promise.all(
     DKIM_SELECTORS.map(async (selector) => {
       const records = await answersFor(`${selector}._domainkey.${domain}`, "TXT");
-      const joined = txtValue(records);
-      if (/v=DKIM1/i.test(joined) || /(?:^|;)\s*p=/.test(joined)) {
-        found.push(selector);
-      }
+      const record = txtValue(records);
+      return /v=DKIM1/i.test(record) || /(?:^|;)\s*p=/.test(record)
+        ? parseDkimKey(selector, record)
+        : null;
     }),
   );
-  return found.sort();
+  const keys = found.filter((key): key is DkimKeyFact => key !== null);
+  // A wildcard *.example.com TXT makes every selector resolve to the same
+  // record; keep one entry per distinct record so a null key is not counted 30
+  // times.
+  const unique = new Map<string, DkimKeyFact>();
+  for (const key of keys) {
+    if (!unique.has(key.record)) unique.set(key.record, key);
+  }
+  const uniqueKeys = [...unique.values()];
+  await Promise.all(
+    uniqueKeys.map(async (key) => {
+      if (key.keyType.toLowerCase() === "rsa") key.bits = await rsaKeyBits(key.record);
+    }),
+  );
+  uniqueKeys.sort((a, b) => a.selector.localeCompare(b.selector));
+  return {
+    selectors: uniqueKeys.filter((key) => !key.revoked).map((key) => key.selector),
+    keys: uniqueKeys,
+  };
+}
+
+interface SpfMechanism {
+  kind: "include" | "redirect" | "lookup";
+  value: string;
+}
+
+function spfMechanisms(record: string): SpfMechanism[] {
+  const mechanisms: SpfMechanism[] = [];
+  for (const token of record.split(/\s+/).slice(1)) {
+    const bare = token.replace(/^[+\-~?]/, "");
+    if (/^include:/i.test(bare)) mechanisms.push({ kind: "include", value: bare.slice(8) });
+    else if (/^redirect=/i.test(bare)) mechanisms.push({ kind: "redirect", value: bare.slice(9) });
+    else if (/^exists:/i.test(bare)) mechanisms.push({ kind: "lookup", value: bare.slice(7) });
+    else if (/^a(:|$)/i.test(bare)) mechanisms.push({ kind: "lookup", value: bare.slice(2) });
+    else if (/^mx(:|$)/i.test(bare)) mechanisms.push({ kind: "lookup", value: bare.slice(3) });
+    else if (/^ptr(:|$)/i.test(bare)) mechanisms.push({ kind: "lookup", value: bare.slice(4) });
+    // exp= is not a mechanism and does not count towards the ten-lookup limit.
+  }
+  // RFC 7208 ignores redirect= when an all mechanism is present.
+  const hasAll = record.split(/\s+/).some((token) => /^[+\-~?]?all$/i.test(token));
+  return hasAll ? mechanisms.filter((mechanism) => mechanism.kind !== "redirect") : mechanisms;
+}
+
+/**
+ * Count the DNS lookups an SPF record costs, following include: and redirect=
+ * up to ten levels. RFC 7208's limit is ten. `mx` counts as one term here, so a
+ * record with several MX hosts can cost more than this estimate.
+ */
+async function spfLookupBudget(
+  domain: string,
+  rootRecord: string,
+): Promise<{ total: number; voidLookups: number }> {
+  let total = 0;
+  let voidLookups = 0;
+  const seen = new Set([domain]);
+  let frontier: { domain: string; record: string }[] = [{ domain, record: rootRecord }];
+
+  for (let depth = 0; depth < 10 && frontier.length; depth += 1) {
+    const targets: string[] = [];
+    for (const item of frontier) {
+      for (const mechanism of spfMechanisms(item.record)) {
+        total += 1;
+        if (mechanism.kind === "lookup") continue;
+        const target = mechanism.value
+          .replace(/^\*\./, "")
+          .replace(/\/.*$/, "")
+          .toLowerCase();
+        if (!target || target.includes("%") || seen.has(target)) continue;
+        seen.add(target);
+        targets.push(target);
+      }
+    }
+
+    const fetched = await Promise.all(
+      targets.map(async (target) => ({
+        target,
+        records: await answersFor(target, "TXT"),
+      })),
+    );
+    const next: { domain: string; record: string }[] = [];
+    for (const entry of fetched) {
+      const record = entry.records
+        .map((value) => txtValue([value]))
+        .find((value) => /^v=spf1\b/i.test(value));
+      if (record) next.push({ domain: entry.target, record });
+      else voidLookups += 1;
+    }
+    frontier = next;
+  }
+
+  return { total, voidLookups };
+}
+
+function tagValue(record: string, tag: string): string {
+  return new RegExp(`(?:^|;)\\s*${tag}\\s*=\\s*([^;]*)`, "i").exec(record)?.[1]?.trim() ?? "";
+}
+
+async function externalDmarcReporting(
+  domain: string,
+  rua: string,
+  ruf: string,
+): Promise<DmarcExternalReportFact[]> {
+  const targets = [
+    ...new Set(
+      [rua, ruf]
+        .join(",")
+        .split(",")
+        .map((value) => value.trim())
+        .filter((value) => /^mailto:/i.test(value))
+        .map((value) => value.replace(/^mailto:/i, "").split("@")[1]?.toLowerCase() ?? "")
+        .filter(Boolean),
+    ),
+  ].filter((target) => target !== domain && target !== `www.${domain}`);
+
+  return Promise.all(
+    targets.slice(0, 5).map(async (target) => {
+      const records = await answersFor(`${domain}._report._dmarc.${target}`, "TXT");
+      const record = records.map((value) => txtValue([value])).join(" ");
+      return { target, authorized: /v=DMARC1/i.test(record), record };
+    }),
+  );
+}
+
+async function collectDane(mx: { priority: number; host: string }[]): Promise<DaneFact[]> {
+  const hosts = mx
+    .map((item) => item.host)
+    .filter((host) => host && host !== ".")
+    .slice(0, 3);
+  return Promise.all(
+    hosts.map(async (host) => ({
+      host,
+      records: await answersFor(`_25._tcp.${host}`, "TLSA"),
+    })),
+  );
 }
 
 function vcardName(entity: Record<string, unknown>): string {
@@ -211,7 +455,7 @@ async function collectRdap(domain: string): Promise<RdapFacts | null> {
 
 /** Collect DNS records, email authentication and registration data. */
 export async function collectDns(domain: string): Promise<DnsFacts> {
-  const [a, aaaa, cname, ns, mx, txt, caa, dnskey, ds, soa, dmarcTxt, bimiTxt, mtaStsTxt, tlsRptTxt, rdap, dkimSelectors] =
+  const [a, aaaa, cname, ns, mx, txt, caa, dnskey, ds, soa, dmarcTxt, bimiTxt, mtaStsTxt, tlsRptTxt, rdap, dkim] =
     await Promise.all([
       answersFor(domain, "A"),
       answersFor(domain, "AAAA"),
@@ -232,12 +476,13 @@ export async function collectDns(domain: string): Promise<DnsFacts> {
     ]);
 
   const txtRecords = txt.map((value) => txtValue([value]));
+  const mxRecords = parseMx(mx);
   const records: DnsRecords = {
     a,
     aaaa,
     cname,
     ns,
-    mx: parseMx(mx),
+    mx: mxRecords,
     txt: txtRecords,
     caa: parseCaa(caa),
     dnskey: dnskey.length > 0,
@@ -246,21 +491,42 @@ export async function collectDns(domain: string): Promise<DnsFacts> {
     soa: soa[0] ?? "",
   };
 
-  // The AD bit is per query; ask once more for a signed signal.
-  try {
-    const signed = await dohQuery(domain, "DS");
-    records.ad = signed.ad;
-  } catch {
-    // Ignore — DNSKEY/DS presence still tells us the zone is signed.
-  }
+  const spf = parseSpf(txtRecords);
+  const dmarc = parseDmarc(dmarcTxt.map((value) => txtValue([value])));
+  const bimiRecord = txtValue(bimiTxt);
+  const mtaStsRecord = txtValue(mtaStsTxt);
+  const tlsRptRecord = txtValue(tlsRptTxt);
+
+  // The AD bit is per query; ask once more for a signed signal. The SPF budget,
+  // TLSA records and any external DMARC authorisation run alongside it.
+  const [adQuery, spfBudget, dane, externalReporting] = await Promise.all([
+    dohQuery(domain, "DS").catch(() => null),
+    spf.present
+      ? spfLookupBudget(domain, spf.record)
+      : Promise.resolve({ total: 0, voidLookups: 0 }),
+    collectDane(mxRecords),
+    dmarc.present && (dmarc.rua || dmarc.ruf)
+      ? externalDmarcReporting(domain, dmarc.rua, dmarc.ruf)
+      : Promise.resolve([]),
+  ]);
+  records.ad = Boolean(adQuery?.ad);
+  spf.lookupCount = spfBudget.total;
+  spf.voidLookups = spfBudget.voidLookups;
+  dmarc.externalReporting = externalReporting;
 
   const email: EmailAuthFacts = {
-    spf: parseSpf(txtRecords),
-    dmarc: parseDmarc(dmarcTxt.map((value) => txtValue([value]))),
-    dkimSelectors,
-    bimi: bimiTxt.map((value) => txtValue([value])).some((value) => /v=BIMI1/i.test(value)),
-    mtaSts: mtaStsTxt.map((value) => txtValue([value])).some((value) => /v=STSv1/i.test(value)),
-    tlsRpt: tlsRptTxt.map((value) => txtValue([value])).some((value) => /v=TLSRPTv1/i.test(value)),
+    spf,
+    dmarc,
+    dkimSelectors: dkim.selectors,
+    dkimKeys: dkim.keys,
+    bimi: /v=BIMI1/i.test(bimiRecord),
+    bimiLogo: tagValue(bimiRecord, "l"),
+    bimiAuthority: tagValue(bimiRecord, "a"),
+    mtaSts: /v=STSv1/i.test(mtaStsRecord),
+    mtaStsId: tagValue(mtaStsRecord, "id"),
+    tlsRpt: /v=TLSRPTv1/i.test(tlsRptRecord),
+    tlsRptRua: tagValue(tlsRptRecord, "rua"),
+    dane,
   };
 
   return {

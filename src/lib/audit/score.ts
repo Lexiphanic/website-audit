@@ -1,7 +1,7 @@
 import { CATEGORIES, type AuditFacts, type CategoryScore, type CheckResult, type ReportPayload } from "./types";
 import { CHECK_DEFINITIONS, definitionFor } from "./registry";
 
-const ENGINE_VERSION = "1.0.0";
+const ENGINE_VERSION = "1.1.0";
 const MAX_PAYLOAD_BYTES = 88_000;
 
 function gradeFor(score: number | null): string {
@@ -130,6 +130,31 @@ function trimFacts(facts: AuditFacts): AuditFacts {
   if (copy.files) {
     copy.files.sitemaps.urls = copy.files.sitemaps.urls.slice(0, 500);
     copy.files.sitemaps.sample = copy.files.sitemaps.sample.slice(0, 10);
+    copy.files.sitemaps.pages = copy.files.sitemaps.pages.slice(0, 5);
+    copy.files.sitemaps.duplicateTitles = copy.files.sitemaps.duplicateTitles.slice(0, 5);
+    if (copy.files.manifestDetails) {
+      copy.files.manifestDetails.icons = copy.files.manifestDetails.icons.slice(0, 8);
+    }
+    if (copy.files.appleTouchIcons) {
+      copy.files.appleTouchIcons = copy.files.appleTouchIcons.slice(0, 4);
+    }
+    if (copy.files.thirdParties) {
+      copy.files.thirdParties.providers = copy.files.thirdParties.providers
+        .slice(0, 20)
+        .map((provider) => ({ ...provider, evidence: provider.evidence.slice(0, 3) }));
+      copy.files.thirdParties.domains = copy.files.thirdParties.domains.slice(0, 20);
+    }
+  }
+  if (copy.dns) {
+    copy.dns.email.spf.records = copy.dns.email.spf.records.slice(0, 3);
+    copy.dns.email.dkimKeys = copy.dns.email.dkimKeys
+      .slice(0, 6)
+      .map((key) => ({ ...key, record: key.record.slice(0, 600) }));
+    copy.dns.email.dmarc.externalReporting = copy.dns.email.dmarc.externalReporting.slice(0, 5);
+    copy.dns.email.dane = copy.dns.email.dane.slice(0, 5);
+  }
+  if (copy.transport?.mtaSts) {
+    copy.transport.mtaSts.mx = copy.transport.mtaSts.mx.slice(0, 10);
   }
   if (copy.performance) {
     copy.performance.brokenImages = copy.performance.brokenImages.slice(0, 8);
@@ -201,7 +226,7 @@ export function buildReport(
           ? { ...payload.facts.html, links: [], images: [], scripts: [], headings: [] }
           : null,
         files: payload.facts.files
-          ? { ...payload.facts.files, sitemaps: { ...payload.facts.files.sitemaps, urls: [], sample: [] } }
+          ? { ...payload.facts.files, sitemaps: { ...payload.facts.files.sitemaps, urls: [], sample: [], pages: [] } }
           : null,
       },
     };

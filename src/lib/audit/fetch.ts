@@ -37,7 +37,11 @@ async function readCapped(
   response: Response,
   maxBytes: number,
 ): Promise<{ body: string; bytes: number }> {
-  if (!response.body || maxBytes <= 0) return { body: "", bytes: 0 };
+  if (!response.body || maxBytes <= 0) {
+    // A status-only probe: do not leave the body stream open.
+    await response.body?.cancel().catch(() => undefined);
+    return { body: "", bytes: 0 };
+  }
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
   let received = 0;

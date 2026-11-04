@@ -22,6 +22,19 @@ import { site } from "../lib/site";
 
       <h2>Audited sites</h2>
       <p>The audit fetches publicly accessible pages, headers, DNS records and the TLS certificate. It does not log in, submit forms, crawl the whole site or test for vulnerabilities. If you own a site and want a report removed, email <a href={`mailto:${site.email}`}>{site.email}</a>.</p>
+      <p>It also reads the resource URLs in the homepage and up to five sitemap pages — scripts, stylesheets, images, iframes, preconnect hints, the web manifest and icons — to name known third-party services. It does not execute those scripts, and it does not crawl the rest of the site.</p>
+
+      <h2>Who a scan talks to</h2>
+      <p>A scan runs on Cloudflare and asks a small set of public services for the data it cannot see from the page alone. The audited domain, the DNS names derived from it (such as <span class="mono">_dmarc</span> and DKIM selectors) and its public URLs are sent to:</p>
+      <ul>
+        <li><strong>Cloudflare DNS</strong> and, as a fallback, <strong>Google Public DNS</strong> for DNS records, email authentication records and the safety check before each request.</li>
+        <li><strong>RDAP.org</strong> and the authoritative domain registry for registration, expiry and registrar data.</li>
+        <li><strong>Qualys SSL Labs</strong> for the public certificate, TLS versions and grade. <strong>crt.sh</strong> is used only when SSL Labs has no certificate yet.</li>
+        <li><strong>Google's HSTS preload service</strong> for the browser preload-list status.</li>
+        <li><strong>Google PageSpeed Insights</strong> only when the operator has configured a PageSpeed API key. It receives the audited URL.</li>
+      </ul>
+      <p>These requests come from Cloudflare's network, not from your browser, so the services do not receive your IP address. They receive the domain and public URLs, not your name or email address. Their own retention policies apply.</p>
+      <p>The scan also fetches the audited site and the public pages and assets it links to, including its MTA-STS policy host. Those belong to the site being audited and are outside our control.</p>
 
       <h2>Contact</h2>
       <p>{site.legalName}, {site.address.street}, {site.address.locality}, {site.address.region}, {site.address.postcode}. Email <a href={`mailto:${site.email}`}>{site.email}</a>.</p>

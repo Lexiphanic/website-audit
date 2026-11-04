@@ -8,8 +8,8 @@ import { collectSecurity } from "../audit/security";
 import { collectPerformance } from "../audit/performance";
 import { collectMigration } from "../audit/migration";
 import { allChecks } from "../audit/checks";
-import { pollLabs, tlsFromLabs } from "../audit/tls";
 import { buildReport } from "../audit/score";
+import { detectDnsProvider } from "../audit/third-parties";
 import { completeReport, failReport, updateProgress } from "../db";
 import { asErrorMessage } from "../util";
 import type {
@@ -20,6 +20,7 @@ import type {
   MigrationFacts,
   PerformanceFacts,
   SecurityFacts,
+  ThirdPartyFacts,
   TransportFacts,
 } from "../audit/types";
 
@@ -32,12 +33,40 @@ export interface AuditParams {
 const EMPTY_DNS: DnsFacts = {
   records: { a: [], aaaa: [], cname: [], ns: [], mx: [], txt: [], caa: [], dnskey: false, ds: false, ad: false, soa: "" },
   email: {
-    spf: { present: false, record: "", qualifier: "", lookupCount: 0 },
-    dmarc: { present: false, record: "", policy: "", subdomainPolicy: "", pct: null, rua: "", ruf: "" },
+    spf: {
+      present: false,
+      record: "",
+      records: [],
+      qualifier: "",
+      lookupCount: 0,
+      voidLookups: 0,
+    },
+    dmarc: {
+      present: false,
+      record: "",
+      policy: "",
+      subdomainPolicy: "",
+      nonExistentPolicy: "",
+      testing: false,
+      pct: null,
+      rua: "",
+      ruf: "",
+      adkim: "",
+      aspf: "",
+      fo: "",
+      psd: "",
+      externalReporting: [],
+    },
     dkimSelectors: [],
+    dkimKeys: [],
     bimi: false,
+    bimiLogo: "",
+    bimiAuthority: "",
     mtaSts: false,
+    mtaStsId: "",
     tlsRpt: false,
+    tlsRptRua: "",
+    dane: [],
   },
   rdap: null,
   resolved: false,
@@ -107,17 +136,25 @@ export class AuditWorkflow extends WorkflowEntrypoint<Env, AuditParams> {
       );
       facts.transport = transport;
 
-      const html = await phase<HtmlFacts | null>("content", 40, () => null, async () => {
-        const target = transport?.homepage.finalUrl || `https://${domain}/`;
-        const response = await fetchText(target, { timeoutMs: 12_000, maxBytes: 512_000 });
-        return collectHtml(response.body, target, response.status, response.headers);
-      });
+      const target = transport?.homepage.finalUrl || `https://${domain}/`;
+      const content = await phase<{ html: HtmlFacts; thirdParties: ThirdPartyFacts } | null>(
+        "content",
+        40,
+        () => null,
+        async () => {
+          const response = await fetchText(target, { timeoutMs: 12_000, maxBytes: 512_000 });
+          return collectHtml(response.body, target, response.status, response.headers);
+        },
+      );
+      const html = content?.html ?? null;
+      const homepageThirdParties = content?.thirdParties ?? null;
       facts.html = html;
 
       const files = await phase<FilesFacts | null>("files", 55, () => null, () =>
-        collectFiles(transport?.homepage.finalUrl || `https://${domain}/`, html),
+        collectFiles(target, html, homepageThirdParties),
       );
       facts.files = files;
+      if (files) files.thirdParties.dns = detectDnsProvider(dns.records.ns);
 
       const security = await phase<SecurityFacts | null>("security", 70, () => null, async () => {
         if (!transport) throw new Error("Transport data is unavailable");
@@ -137,33 +174,11 @@ export class AuditWorkflow extends WorkflowEntrypoint<Env, AuditParams> {
       });
       facts.migration = migration;
 
-      // SSL Labs is the source for protocol versions and the grade. A first
-      // scan can take a minute, so the report is allowed to complete without
-      // it: the certificate from crt.sh is already in hand.
-      if (transport?.tls.apex?.pending) {
-        await progress("tls-grade", 92);
-        let current = transport.tls.apex;
-        let tlsHost = domain;
-        try {
-          tlsHost = new URL(transport.homepage.finalUrl).hostname;
-        } catch {
-          // keep the apex
-        }
-        for (let attempt = 0; attempt < 3; attempt += 1) {
-          await step.sleep(`tls-wait-${attempt}`, "25 seconds");
-          try {
-            const summary = await step.do(`tls-poll-${attempt}`, STEP_CONFIG, () => pollLabs(tlsHost));
-            current = tlsFromLabs(summary, current.certificate);
-            if (summary.http2) transport.http2 = true;
-            if (!current.pending) break;
-          } catch (error) {
-            facts.errors.push({ phase: "tls-grade", message: asErrorMessage(error) });
-            break;
-          }
-        }
-        transport.tls.apex = current;
-        if (transport.wwwReachable) transport.tls.www = current;
-      }
+      // SSL Labs is the source for protocol versions and the grade. A fresh
+      // scan takes minutes (5m56s for lexiphanic.co.uk), so sleeping here only
+      // held the report at 92% and still finished pending. The cached answer
+      // from `startLabs` is already in transport; a later run picks up the
+      // grade once Labs has finished.
 
       const results = await phase("score", 95, () => allChecks(facts), async () => allChecks(facts));
       const payload = buildReport(facts, results, Date.now() - started);

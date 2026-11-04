@@ -1,6 +1,21 @@
 import { XMLParser } from "fast-xml-parser";
-import { fetchFollowing, probeStatus } from "./fetch";
-import type { FileEntryFact, FilesFacts, HtmlFacts } from "./types";
+import { parseHTML } from "linkedom";
+import { cleanText } from "../util";
+import { fetchFollowing, fetchText, probeStatus } from "./fetch";
+import {
+  detectThirdParties,
+  emptyThirdPartyFacts,
+  mergeThirdPartyFacts,
+} from "./third-parties";
+import type {
+  FileEntryFact,
+  FilesFacts,
+  HtmlFacts,
+  IconFact,
+  ManifestFacts,
+  SitemapPageFact,
+  ThirdPartyFacts,
+} from "./types";
 
 interface RawFile {
   entry: FileEntryFact;
@@ -198,6 +213,79 @@ async function sampleUrls(urls: string[]): Promise<FilesFacts["sitemaps"]["sampl
   });
 }
 
+const NON_HTML_EXTENSION =
+  /\.(?:jpe?g|png|gif|webp|avif|svg|ico|bmp|tiff?|pdf|zip|gz|tgz|7z|rar|mp4|m4v|mov|webm|mp3|ogg|wav|woff2?|ttf|otf|eot|css|js|mjs|json|xml|rss|atom|txt|csv|docx?|xlsx?|pptx?)$/i;
+
+function isHtmlUrl(url: string): boolean {
+  try {
+    return !NON_HTML_EXTENSION.test(new URL(url).pathname);
+  } catch {
+    return false;
+  }
+}
+
+/** Fetch a few sampled HTML pages for title, description, canonical and robots; not a crawl. */
+async function samplePages(
+  urls: string[],
+): Promise<{ pages: SitemapPageFact[]; thirdParties: ThirdPartyFacts }> {
+  const candidates = urls.filter(isHtmlUrl).slice(0, 5);
+  const sampled = await mapLimit(candidates, 2, async (url) => {
+    try {
+      const result = await fetchFollowing(url, { timeoutMs: 7000, maxBytes: 64_000 });
+      if (result.status !== 200 || !result.body) return null;
+      // Sitemaps can include images and PDFs; only HTML pages have these tags.
+      if (!/text\/html|application\/xhtml/i.test(result.contentType)) return null;
+      const { document } = parseHTML(result.body);
+      const metas = Array.from(document.querySelectorAll("meta"));
+      const metaContent = (name: string) =>
+        metas
+          .find((meta) => (meta.getAttribute("name") ?? "").toLowerCase() === name)
+          ?.getAttribute("content") ?? "";
+      const canonical =
+        Array.from(document.querySelectorAll("link"))
+          .find((link) =>
+            (link.getAttribute("rel") ?? "")
+              .toLowerCase()
+              .split(/\s+/)
+              .includes("canonical"),
+          )
+          ?.getAttribute("href") ?? "";
+      const resources = (selector: string, attribute: string) =>
+        Array.from(document.querySelectorAll(selector))
+          .map((element) => element.getAttribute(attribute) ?? "")
+          .filter(Boolean);
+
+      const page: SitemapPageFact = {
+        url,
+        title: cleanText(document.querySelector("title")?.textContent ?? "", 200),
+        description: cleanText(metaContent("description"), 300),
+        canonical,
+        robots: metaContent("robots"),
+        xRobots: result.headers["x-robots-tag"] ?? "",
+      };
+      const thirdParties = detectThirdParties({
+        url,
+        htmlSource: result.body,
+        scripts: resources("script[src]", "src"),
+        stylesheets: resources('link[rel="stylesheet"][href]', "href"),
+        images: resources("img[src]", "src"),
+        iframes: resources("iframe[src]", "src"),
+        hints: resources('link[rel="preconnect"][href], link[rel="dns-prefetch"][href]', "href"),
+      });
+      return { page, thirdParties };
+    } catch {
+      return null;
+    }
+  });
+  const entries = sampled.filter(
+    (entry): entry is { page: SitemapPageFact; thirdParties: ThirdPartyFacts } => entry !== null,
+  );
+  return {
+    pages: entries.map((entry) => entry.page),
+    thirdParties: mergeThirdPartyFacts(...entries.map((entry) => entry.thirdParties)),
+  };
+}
+
 function markdownStats(body: string): { headings: number; links: number } {
   let headings = 0;
   let links = 0;
@@ -217,8 +305,203 @@ function validJson(body: string): boolean {
   }
 }
 
+const EMPTY_MANIFEST: ManifestFacts = {
+  present: false,
+  href: "",
+  status: 0,
+  valid: false,
+  name: "",
+  shortName: "",
+  startUrl: "",
+  display: "",
+  themeColor: "",
+  backgroundColor: "",
+  icons: [],
+  iconSizes: [],
+};
+
+function text(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+/** Fetch and parse the web app manifest declared by the page (or the usual names). */
+async function collectManifest(
+  baseUrl: string,
+  html: HtmlFacts | null,
+  reusable: Map<string, string>,
+  entries: Record<string, FileEntryFact>,
+): Promise<ManifestFacts> {
+  const base = new URL(baseUrl);
+  const declaredHref = html?.manifestHref
+    ? new URL(html.manifestHref, base).href
+    : "";
+  const candidates = [
+    declaredHref,
+    new URL("/manifest.webmanifest", base).href,
+    new URL("/site.webmanifest", base).href,
+    new URL("/manifest.json", base).href,
+  ].filter(Boolean);
+
+  for (const candidate of [...new Set(candidates)]) {
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(candidate);
+    } catch {
+      continue;
+    }
+    const sameOrigin = parsedUrl.origin === base.origin;
+    const path = parsedUrl.pathname;
+
+    // The well-known pass only speaks for this origin. A manifest on a CDN is
+    // fetched directly rather than reusing a same-named local file.
+    const known = sameOrigin ? entries[path] : undefined;
+    if (known && (known.status !== 200 || known.soft404)) continue;
+
+    let body: string | null = sameOrigin ? (reusable.get(path) ?? null) : null;
+    let status = known?.status ?? 0;
+    if (body === null) {
+      try {
+        const response = await fetchFollowing(candidate, { timeoutMs: 7000, maxBytes: 128_000 });
+        status = response.status;
+        if (response.status !== 200) continue;
+        body = response.body;
+      } catch {
+        continue;
+      }
+    }
+
+    try {
+      const data = JSON.parse(body) as Record<string, unknown>;
+      if (!data || typeof data !== "object" || Array.isArray(data)) {
+        throw new Error("Manifest is not a JSON object");
+      }
+
+      const rawIcons = Array.isArray(data.icons) ? data.icons : [];
+      const icons = rawIcons
+        .filter(
+          (icon): icon is Record<string, unknown> =>
+            Boolean(icon) && typeof icon === "object" && !Array.isArray(icon),
+        )
+        .map((icon) => ({
+          src: text(icon.src),
+          sizes: text(icon.sizes),
+          type: text(icon.type),
+          purpose: text(icon.purpose),
+        }))
+        .filter((icon) => icon.src)
+        .slice(0, 12);
+      const iconSizes = [
+        ...new Set(
+          icons
+            .flatMap((icon) => icon.sizes.split(/\s+/))
+            .filter((size) => /^\d+x\d+$/i.test(size))
+            .map((size) => size.toLowerCase()),
+        ),
+      ];
+
+      return {
+        present: true,
+        href: candidate,
+        status,
+        valid: true,
+        name: text(data.name),
+        shortName: text(data.short_name),
+        startUrl: text(data.start_url),
+        display: text(data.display),
+        themeColor: text(data.theme_color),
+        backgroundColor: text(data.background_color),
+        icons,
+        iconSizes,
+      };
+    } catch (error) {
+      return {
+        ...EMPTY_MANIFEST,
+        present: true,
+        href: candidate,
+        status: status || 200,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  if (declaredHref) {
+    return {
+      ...EMPTY_MANIFEST,
+      present: true,
+      href: declaredHref,
+      error: "The declared manifest could not be read",
+    };
+  }
+  return { ...EMPTY_MANIFEST };
+}
+
+/** Status and content type of one declared icon, without downloading the file. */
+async function probeIcon(
+  icon: { rel: string; href: string; sizes: string; type: string },
+  baseUrl: string,
+): Promise<IconFact> {
+  let href = icon.href;
+  try {
+    href = new URL(icon.href, baseUrl).href;
+  } catch {
+    // Keep the original href so the check can still report what was declared.
+  }
+
+  try {
+    const result = await fetchText(href, { method: "GET", timeoutMs: 5000, maxBytes: 0 });
+    return {
+      rel: icon.rel,
+      href,
+      sizes: icon.sizes,
+      declaredType: icon.type,
+      status: result.status,
+      contentType: result.contentType,
+      bytes: Number(result.headers["content-length"] ?? 0) || 0,
+    };
+  } catch (error) {
+    return {
+      rel: icon.rel,
+      href,
+      sizes: icon.sizes,
+      declaredType: icon.type,
+      status: 0,
+      contentType: "",
+      bytes: 0,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+async function collectIcons(
+  baseUrl: string,
+  html: HtmlFacts | null,
+): Promise<{ appleTouch: IconFact[]; mask: IconFact | null }> {
+  const icons = html?.icons ?? [];
+  const sizeOf = (sizes: string): number =>
+    sizes.split(/\s+/).reduce((largest, size) => {
+      const match = /^(\d+)x(\d+)$/i.exec(size);
+      return match ? Math.max(largest, Math.min(Number(match[1]), Number(match[2]))) : largest;
+    }, 0);
+  const apple = icons
+    .filter((icon) => /apple-touch-icon/i.test(icon.rel))
+    .sort((a, b) => sizeOf(b.sizes) - sizeOf(a.sizes))
+    .slice(0, 4);
+  const mask = icons.find((icon) => /(^|\s)mask-icon(\s|$)/i.test(icon.rel));
+
+  const [appleTouch, maskIcon] = await Promise.all([
+    Promise.all(apple.map((icon) => probeIcon(icon, baseUrl))),
+    mask ? probeIcon(mask, baseUrl) : Promise.resolve(null),
+  ]);
+
+  return { appleTouch, mask: maskIcon };
+}
+
 /** Fetch robots, sitemaps and the well-known set, and parse what matters. */
-export async function collectFiles(baseUrl: string, html: HtmlFacts | null): Promise<FilesFacts> {
+export async function collectFiles(
+  baseUrl: string,
+  html: HtmlFacts | null,
+  initialThirdParties: ThirdPartyFacts | null = null,
+): Promise<FilesFacts> {
   const base = new URL(baseUrl);
   const fileUrl = (path: string) => new URL(path, base).href;
 
@@ -263,6 +546,21 @@ export async function collectFiles(baseUrl: string, html: HtmlFacts | null): Pro
   const entries: Record<string, FileEntryFact> = {};
   for (const raw of raws) entries[raw.entry.path] = raw.entry;
 
+  // Bodies already fetched by the well-known pass, but only when the response
+  // fits inside its 128 KB cap. A larger sitemap was truncated there and must
+  // be fetched again with the bigger limit.
+  const reusable = new Map<string, string>();
+  for (const raw of raws) {
+    if (
+      raw.entry.status === 200 &&
+      !raw.entry.soft404 &&
+      raw.entry.bytes > 0 &&
+      raw.entry.bytes < 128_000
+    ) {
+      reusable.set(raw.entry.path, raw.body);
+    }
+  }
+
   const get = (path: string): RawFile | undefined => {
     const raw = byPath.get(path);
     if (!raw || raw.entry.status === 0 || raw.entry.soft404) return undefined;
@@ -272,6 +570,11 @@ export async function collectFiles(baseUrl: string, html: HtmlFacts | null): Pro
     const entry = entries[path];
     return Boolean(entry && entry.status >= 200 && entry.status < 400 && !entry.soft404);
   };
+
+  // The manifest and declared icons do not depend on the sitemap work, so start
+  // them now and await both at the end.
+  const manifestPromise = collectManifest(base.href, html, reusable, entries);
+  const iconsPromise = collectIcons(base.href, html);
 
   const robotsRaw = get("/robots.txt");
   const robots = robotsRaw
@@ -284,9 +587,18 @@ export async function collectFiles(baseUrl: string, html: HtmlFacts | null): Pro
 
   for (const candidate of candidates) {
     try {
-      const response = await fetchFollowing(candidate, { timeoutMs: 8000, maxBytes: 4_000_000 });
-      if (response.status !== 200) continue;
-      const parsed = parseSitemap(response.body);
+      let body: string | null = null;
+      try {
+        body = reusable.get(new URL(candidate).pathname) ?? null;
+      } catch {
+        body = null;
+      }
+      if (body === null) {
+        const response = await fetchFollowing(candidate, { timeoutMs: 8000, maxBytes: 4_000_000 });
+        if (response.status !== 200) continue;
+        body = response.body;
+      }
+      const parsed = parseSitemap(body);
       if (!parsed.valid) continue;
 
       sitemap.valid = true;
@@ -330,6 +642,26 @@ export async function collectFiles(baseUrl: string, html: HtmlFacts | null): Pro
   const llmsSource = llmsRoot ?? llmsWellKnown;
   const llmsStats = markdownStats(llmsSource?.body ?? "");
 
+  const [manifestDetails, iconFacts] = await Promise.all([manifestPromise, iconsPromise]);
+  const [sample, sampled] = await Promise.all([
+    uniqueUrls.length ? sampleUrls(uniqueUrls) : Promise.resolve([]),
+    uniqueUrls.length
+      ? samplePages(uniqueUrls)
+      : Promise.resolve({ pages: [], thirdParties: emptyThirdPartyFacts() }),
+  ]);
+  const pages = sampled.pages;
+  const thirdParties = mergeThirdPartyFacts(initialThirdParties, sampled.thirdParties);
+  const titleCounts = new Map<string, number>();
+  for (const entry of pages) {
+    const key = entry.title.trim().toLowerCase();
+    if (!key) continue;
+    titleCounts.set(key, (titleCounts.get(key) ?? 0) + 1);
+  }
+  const duplicateTitles = [...titleCounts.entries()]
+    .filter(([, count]) => count > 1)
+    .map(([title]) => title)
+    .slice(0, 5);
+
   return {
     entries,
     robots: {
@@ -345,7 +677,9 @@ export async function collectFiles(baseUrl: string, html: HtmlFacts | null): Pro
       valid: sitemap.valid,
       urls: uniqueUrls.slice(0, 5000),
       count: uniqueUrls.length,
-      sample: uniqueUrls.length ? await sampleUrls(uniqueUrls) : [],
+      sample,
+      pages,
+      duplicateTitles,
       lastmod: sitemap.lastmod,
       source: sitemap.source,
     },
@@ -379,13 +713,14 @@ export async function collectFiles(baseUrl: string, html: HtmlFacts | null): Pro
     adsTxt: ok("/ads.txt"),
     appAdsTxt: ok("/app-ads.txt"),
     browserconfig: ok("/browserconfig.xml"),
-    manifest:
-      Boolean(html?.manifestHref) ||
-      ok("/manifest.webmanifest") ||
-      ok("/site.webmanifest"),
+    manifest: manifestDetails.present,
+    manifestDetails,
     rootIcons: {
       favicon: ok("/favicon.ico"),
       appleTouch: ok("/apple-touch-icon.png"),
     },
+    appleTouchIcons: iconFacts.appleTouch,
+    maskIcon: iconFacts.mask,
+    thirdParties,
   };
 }

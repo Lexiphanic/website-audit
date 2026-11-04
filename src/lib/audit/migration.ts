@@ -1,3 +1,4 @@
+import { detectDnsProvider, detectEdge } from "./third-parties";
 import type {
   DnsFacts,
   FilesFacts,
@@ -8,22 +9,26 @@ import type {
 } from "./types";
 
 function hosting(headers: Record<string, string>, dns: DnsFacts): string {
+  const edge = detectEdge(headers)?.name;
+  if (edge) return edge;
   const server = (headers.server ?? "").toLowerCase();
-  const ns = dns.records.ns.join(" ").toLowerCase();
-
-  if (headers["cf-ray"] || server.includes("cloudflare") || ns.includes("cloudflare")) return "Cloudflare";
-  if (headers["x-vercel-id"] || headers["x-vercel-cache"]) return "Vercel";
-  if (headers["x-nf-request-id"] || headers["x-netlify-id"]) return "Netlify";
-  if (headers["x-amz-cf-id"] || headers["x-amz-cf-pop"] || server.includes("amazons3")) return "Amazon Web Services";
-  if (headers["x-github-request-id"]) return "GitHub Pages";
-  if (ns.includes("domaincontrol")) return "GoDaddy";
-  if (ns.includes("123-reg")) return "123-reg";
-  if (ns.includes("krystal")) return "Krystal";
-  if (ns.includes("ui-dns") || ns.includes("ionos")) return "IONOS";
-  if (ns.includes("names.co.uk")) return "Namesco";
-  if (ns.includes("awsdns")) return "Amazon Route 53";
-  if (ns.includes("googledomains") || ns.includes("google.com")) return "Google Cloud DNS";
+  // S3 is hosting, not an edge, so it does not belong in detectEdge.
+  if (server.includes("amazons3")) return "Amazon S3";
+  const provider = detectDnsProvider(dns.records.ns)?.name;
+  if (provider) return provider;
   return server ? `Unknown (${server})` : "Unknown";
+}
+
+function analyticsFrom(files: FilesFacts, html: HtmlFacts): string[] {
+  const tracked = new Set(
+    files.thirdParties.providers
+      .filter((provider) =>
+        ["advertising", "analytics", "tag-manager", "session-replay"].includes(provider.category),
+      )
+      .map((provider) => provider.name),
+  );
+  // Fall back to the homepage regexes when the richer detector found nothing.
+  return tracked.size ? [...tracked] : html.analytics;
 }
 
 function emailProvider(dns: DnsFacts): string {
@@ -102,7 +107,7 @@ export async function collectMigration(
     pageCount: files.sitemaps.count,
     ecommerce: ecommerce(html),
     booking: booking(html),
-    analytics: html.analytics,
+    analytics: analyticsFrom(files, html),
     emailProvider: emailProvider(dns),
     registrar: rdap?.registrar ?? "Unknown",
     domainExpires: rdap?.expires ?? "",

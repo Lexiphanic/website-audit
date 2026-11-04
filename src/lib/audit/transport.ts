@@ -1,6 +1,6 @@
 import { followRedirects, fetchText } from "./fetch";
 import { certificateFromCrt, startLabs, tlsFromLabs } from "./tls";
-import type { DnsFacts, HstsInfo, TransportFacts } from "./types";
+import type { DnsFacts, HstsInfo, MtaStsPolicyFacts, TransportFacts } from "./types";
 
 function parseHsts(raw: string): HstsInfo {
   const value = raw ?? "";
@@ -29,6 +29,42 @@ async function preloadStatus(domain: string): Promise<string | null> {
     return data.status ?? null;
   } catch {
     return null;
+  }
+}
+
+/** Fetch and parse the MTA-STS policy published for the domain. */
+async function fetchMtaStsPolicy(domain: string): Promise<MtaStsPolicyFacts> {
+  const url = `https://mta-sts.${domain}/.well-known/mta-sts.txt`;
+  try {
+    const result = await fetchText(url, { timeoutMs: 8000, maxBytes: 64_000 });
+    const fields = new Map<string, string[]>();
+    for (const line of result.body.split(/\r?\n/)) {
+      const index = line.indexOf(":");
+      if (index < 1) continue;
+      const key = line.slice(0, index).trim().toLowerCase();
+      const value = line.slice(index + 1).trim();
+      if (!key || !value) continue;
+      fields.set(key, [...(fields.get(key) ?? []), value]);
+    }
+    return {
+      present: result.status === 200,
+      url,
+      status: result.status,
+      mode: fields.get("mode")?.[0] ?? "",
+      maxAge: Number(fields.get("max_age")?.[0] ?? 0) || 0,
+      mx: fields.get("mx") ?? [],
+      error: result.status === 200 ? undefined : `Policy returned ${result.status}`,
+    };
+  } catch (error) {
+    return {
+      present: false,
+      url,
+      status: 0,
+      mode: "",
+      maxAge: 0,
+      mx: [],
+      error: error instanceof Error ? error.message : String(error),
+    };
   }
 }
 
@@ -87,11 +123,16 @@ export async function collectTransport(
     }
   })();
 
-  const [crtCertificate, labs] = await Promise.all([
-    certificateFromCrt(domain),
+  // SSL Labs answers from its 24-hour cache in under a second and includes the
+  // certificate. crt.sh is only the fallback when Labs has nothing yet (a cold
+  // cache or a scan still in progress); it is flaky and can take seconds per
+  // attempt, so do not pay for it on every run.
+  const [labs, preload, mtaSts] = await Promise.all([
     startLabs(tlsHost),
+    preloadStatus(domain),
+    dns.email.mtaSts ? fetchMtaStsPolicy(domain) : Promise.resolve(null),
   ]);
-  const preload = await preloadStatus(domain);
+  const crtCertificate = labs.certificate ? null : await certificateFromCrt(domain);
   const apexTls = tlsFromLabs(labs, crtCertificate);
   const wwwTls = wwwReachable ? apexTls : null;
 
@@ -113,6 +154,7 @@ export async function collectTransport(
       www: hstsFrom(httpsWww.firstHeaders),
       preloadStatus: preload,
     },
+    mtaSts,
     ipv6,
     http2: labs.http2,
     http3,

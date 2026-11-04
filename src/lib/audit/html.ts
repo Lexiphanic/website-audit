@@ -1,7 +1,8 @@
 import { parseHTML } from "linkedom";
 import { cleanText, sha256 } from "../util";
 import { probeStatus } from "./fetch";
-import type { HtmlFacts, HtmlImageFact, HtmlScriptFact } from "./types";
+import { detectThirdParties } from "./third-parties";
+import type { HtmlFacts, HtmlImageFact, HtmlScriptFact, ThirdPartyFacts } from "./types";
 
 function metaMap(document: Document): Map<string, string[]> {
   const map = new Map<string, string[]>();
@@ -192,7 +193,7 @@ export async function collectHtml(
   finalUrl: string,
   status: number,
   headers: Record<string, string> = {},
-): Promise<HtmlFacts> {
+): Promise<{ html: HtmlFacts; thirdParties: ThirdPartyFacts }> {
   const { document } = parseHTML(html);
   const meta = metaMap(document);
   const base = new URL(finalUrl);
@@ -204,7 +205,11 @@ export async function collectHtml(
     if (key.startsWith("twitter:")) twitter[key] = values[0] ?? "";
   }
 
-  const icons = Array.from(document.querySelectorAll('link[rel~="icon"], link[rel="apple-touch-icon"]'))
+  const icons = Array.from(
+    document.querySelectorAll(
+      'link[rel~="icon"], link[rel="apple-touch-icon"], link[rel="apple-touch-icon-precomposed"], link[rel="mask-icon"]',
+    ),
+  )
     .map((link) => ({
       rel: link.getAttribute("rel") ?? "",
       href: link.getAttribute("href") ?? "",
@@ -214,6 +219,15 @@ export async function collectHtml(
     .filter((icon) => icon.href);
 
   const manifestHref = document.querySelector('link[rel="manifest"]')?.getAttribute("href") ?? "";
+
+  const iframes = Array.from(document.querySelectorAll("iframe[src]"))
+    .map((iframe) => iframe.getAttribute("src") ?? "")
+    .filter(Boolean);
+  const hints = Array.from(
+    document.querySelectorAll('link[rel="preconnect"][href], link[rel="dns-prefetch"][href]'),
+  )
+    .map((link) => link.getAttribute("href") ?? "")
+    .filter(Boolean);
 
   const hreflang = Array.from(document.querySelectorAll('link[rel="alternate"][hreflang]'))
     .map((link) => ({
@@ -320,7 +334,7 @@ export async function collectHtml(
     }
   }
 
-  return {
+  const facts: HtmlFacts = {
     finalUrl,
     status,
     title: cleanText(document.querySelector("title")?.textContent, 200),
@@ -365,4 +379,17 @@ export async function collectHtml(
     ogImageStatus,
     bodyHash: await sha256(html),
   };
+
+  const thirdParties = detectThirdParties({
+    url: finalUrl,
+    headers,
+    htmlSource: html,
+    scripts: facts.scripts.map((script) => script.src),
+    stylesheets: facts.stylesheets,
+    images: facts.images.map((image) => image.src),
+    iframes,
+    hints,
+  });
+
+  return { html: facts, thirdParties };
 }

@@ -135,6 +135,8 @@ export interface CertificateInfo {
   serial: string;
   fingerprint: string;
   chainLength: number;
+  keyAlgorithm: string;
+  keySize: number | null;
   authorized: boolean;
   authorizationError: string;
 }
@@ -155,6 +157,11 @@ export interface TlsProbe {
   grade: string;
   source: string;
   pending: boolean;
+  ocspStapling: boolean | null;
+  hasSct: boolean | null;
+  supportsAead: boolean | null;
+  supportsRc4: boolean | null;
+  forwardSecrecy: number | null;
   error?: string;
 }
 
@@ -187,6 +194,7 @@ export interface TransportFacts {
     www: HstsInfo;
     preloadStatus: string | null;
   };
+  mtaSts: MtaStsPolicyFacts | null;
   ipv6: boolean;
   http2: boolean;
   http3: boolean;
@@ -210,21 +218,78 @@ export interface DnsRecords {
   soa: string;
 }
 
+export interface SpfFacts {
+  present: boolean;
+  record: string;
+  records: string[];
+  qualifier: string;
+  lookupCount: number;
+  voidLookups: number;
+  error?: string;
+}
+
+export interface DmarcExternalReportFact {
+  target: string;
+  authorized: boolean;
+  record: string;
+}
+
+export interface DmarcFacts {
+  present: boolean;
+  record: string;
+  policy: string;
+  subdomainPolicy: string;
+  nonExistentPolicy: string;
+  testing: boolean;
+  pct: number | null;
+  rua: string;
+  ruf: string;
+  adkim: string;
+  aspf: string;
+  fo: string;
+  psd: string;
+  externalReporting: DmarcExternalReportFact[];
+}
+
+export interface DkimKeyFact {
+  selector: string;
+  record: string;
+  keyType: string;
+  bits: number | null;
+  revoked: boolean;
+  testing: boolean;
+  hashAlgorithms: string[];
+  error?: string;
+}
+
+export interface DaneFact {
+  host: string;
+  records: string[];
+}
+
 export interface EmailAuthFacts {
-  spf: { present: boolean; record: string; qualifier: string; lookupCount: number };
-  dmarc: {
-    present: boolean;
-    record: string;
-    policy: string;
-    subdomainPolicy: string;
-    pct: number | null;
-    rua: string;
-    ruf: string;
-  };
+  spf: SpfFacts;
+  dmarc: DmarcFacts;
   dkimSelectors: string[];
+  dkimKeys: DkimKeyFact[];
   bimi: boolean;
+  bimiLogo: string;
+  bimiAuthority: string;
   mtaSts: boolean;
+  mtaStsId: string;
   tlsRpt: boolean;
+  tlsRptRua: string;
+  dane: DaneFact[];
+}
+
+export interface MtaStsPolicyFacts {
+  present: boolean;
+  url: string;
+  status: number;
+  mode: string;
+  maxAge: number;
+  mx: string[];
+  error?: string;
 }
 
 export interface RdapFacts {
@@ -314,6 +379,89 @@ export interface FileEntryFact {
   error?: string;
 }
 
+export interface SitemapPageFact {
+  url: string;
+  title: string;
+  description: string;
+  canonical: string;
+  robots: string;
+  xRobots: string;
+}
+
+export type ThirdPartyCategory =
+  | "advertising"
+  | "analytics"
+  | "tag-manager"
+  | "session-replay"
+  | "consent"
+  | "social"
+  | "embedded"
+  | "functional";
+
+export type PrivacyLevel = "high" | "medium" | "low";
+
+export interface ThirdPartyProviderFact {
+  name: string;
+  category: ThirdPartyCategory;
+  privacy: PrivacyLevel;
+  evidence: string[];
+  source: "script" | "stylesheet" | "image" | "iframe" | "hint" | "inline";
+}
+
+export interface ThirdPartyDomainFact {
+  host: string;
+  count: number;
+  categories: ThirdPartyCategory[];
+}
+
+export interface EdgeFact {
+  name: string;
+  confidence: "high" | "medium" | "low";
+  evidence: string[];
+}
+
+export interface ThirdPartyFacts {
+  edge: EdgeFact | null;
+  dns: EdgeFact | null;
+  providers: ThirdPartyProviderFact[];
+  domains: ThirdPartyDomainFact[];
+  consent: string[];
+}
+
+export interface IconFact {
+  rel: string;
+  href: string;
+  sizes: string;
+  declaredType: string;
+  status: number;
+  contentType: string;
+  bytes: number;
+  error?: string;
+}
+
+export interface ManifestIconFact {
+  src: string;
+  sizes: string;
+  type: string;
+  purpose: string;
+}
+
+export interface ManifestFacts {
+  present: boolean;
+  href: string;
+  status: number;
+  valid: boolean;
+  error?: string;
+  name: string;
+  shortName: string;
+  startUrl: string;
+  display: string;
+  themeColor: string;
+  backgroundColor: string;
+  icons: ManifestIconFact[];
+  iconSizes: string[];
+}
+
 export interface FilesFacts {
   entries: Record<string, FileEntryFact>;
   robots: {
@@ -330,6 +478,8 @@ export interface FilesFacts {
     urls: string[];
     count: number;
     sample: { url: string; status: number; error?: string }[];
+    pages: SitemapPageFact[];
+    duplicateTitles: string[];
     lastmod: string;
     source: string;
   };
@@ -364,7 +514,11 @@ export interface FilesFacts {
   appAdsTxt: boolean;
   browserconfig: boolean;
   manifest: boolean;
+  manifestDetails: ManifestFacts;
   rootIcons: { favicon: boolean; appleTouch: boolean };
+  appleTouchIcons: IconFact[];
+  maskIcon: IconFact | null;
+  thirdParties: ThirdPartyFacts;
 }
 
 export interface SecurityFacts {

@@ -53,6 +53,15 @@ function statusOk(status: number): boolean {
   return status >= 200 && status < 400;
 }
 
+/** CA/Browser Forum maximum certificate lifetime for the issuance date. */
+function certLifetimeLimit(issuedAt: number): number {
+  if (!issuedAt) return 398;
+  if (issuedAt >= Date.UTC(2029, 2, 15)) return 47;
+  if (issuedAt >= Date.UTC(2027, 2, 15)) return 100;
+  if (issuedAt >= Date.UTC(2026, 2, 15)) return 200;
+  return 398;
+}
+
 function ms(value: string): number | null {
   const match = /([\d.]+)\s*(ms|s)?/i.exec(value ?? "");
   if (!match) return null;
@@ -81,7 +90,8 @@ export function transportChecks(facts: AuditFacts): CheckResult[] {
       "cert-apex", "cert-www", "cert-validity", "cert-chain", "cert-hostname",
       "tls12", "tls13", "tls-legacy", "hsts-apex", "hsts-www", "hsts-max-age",
       "hsts-subdomains", "hsts-preload", "hsts-preload-list", "ipv6",
-      "http2", "http3", "mixed-content",
+      "http2", "http3", "mixed-content", "ocsp-stapling", "certificate-transparency",
+      "cipher-strength", "cert-lifetime", "cert-key-size", "forward-secrecy",
     ].map((key) => skip(key, "Transport checks could not run"));
   }
 
@@ -200,6 +210,68 @@ export function transportChecks(facts: AuditFacts): CheckResult[] {
       : legacy.supported
         ? fail("tls-legacy", `${legacy.protocol || "TLS 1.0/1.1"} is still accepted`)
         : pass("tls-legacy", "TLS 1.0 and 1.1 are rejected"),
+  );
+
+  const tls = t.tls.apex;
+  results.push(
+    tls?.ocspStapling === null || tls?.ocspStapling === undefined
+      ? skip("ocsp-stapling", "Not measured")
+      : tls.ocspStapling
+        ? pass("ocsp-stapling", "OCSP response is stapled")
+        : warn("ocsp-stapling", "OCSP stapling is not enabled"),
+  );
+  results.push(
+    tls?.hasSct === null || tls?.hasSct === undefined
+      ? skip("certificate-transparency", "Not measured")
+      : tls.hasSct
+        ? pass("certificate-transparency", "Certificate carries embedded SCTs")
+        : warn("certificate-transparency", "No embedded SCTs"),
+  );
+  results.push(
+    tls?.supportsAead === null || tls?.supportsAead === undefined
+      ? skip("cipher-strength", "Not measured")
+      : tls.supportsRc4
+        ? fail("cipher-strength", "RC4 is still offered")
+        : tls.supportsAead
+          ? pass("cipher-strength", "AEAD suites offered; no RC4")
+          : warn("cipher-strength", "No AEAD suite reported"),
+  );
+  results.push(
+    tls?.forwardSecrecy === null || tls?.forwardSecrecy === undefined
+      ? skip("forward-secrecy", "Not measured")
+      : tls.forwardSecrecy > 0
+        ? pass("forward-secrecy", "Ephemeral key exchange is offered")
+        : warn("forward-secrecy", "No forward secrecy reported"),
+  );
+
+  const certDates = tls?.certificate;
+  const validFrom = certDates?.validFrom ? new Date(certDates.validFrom).valueOf() : 0;
+  const validTo = certDates?.validTo ? new Date(certDates.validTo).valueOf() : 0;
+  const lifetimeDays = validFrom && validTo ? Math.round((validTo - validFrom) / 86_400_000) : 0;
+  const lifetimeLimit = certLifetimeLimit(validFrom);
+  results.push(
+    !certDates || !lifetimeDays
+      ? skip("cert-lifetime", "Certificate dates unavailable")
+      : lifetimeDays > lifetimeLimit
+        ? warn("cert-lifetime", `${lifetimeDays} days; the CA/B limit is ${lifetimeLimit} for this issue date`)
+        : pass("cert-lifetime", `${lifetimeDays} days (limit ${lifetimeLimit})`),
+  );
+  const keyAlgorithm = (certDates?.keyAlgorithm ?? "").toLowerCase();
+  const keySize = certDates?.keySize ?? null;
+  results.push(
+    !keyAlgorithm
+      ? skip("cert-key-size", "Certificate key details unavailable")
+      : keyAlgorithm.includes("ed25519") || keyAlgorithm.includes("ed448")
+        ? pass("cert-key-size", keyAlgorithm.toUpperCase())
+        : keySize === null
+          ? skip("cert-key-size", "Certificate key size unavailable")
+          : keyAlgorithm.includes("rsa") && keySize < 2048
+            ? fail("cert-key-size", `RSA ${keySize}-bit`)
+            : keyAlgorithm.includes("dsa") && keySize < 2048
+              ? fail("cert-key-size", `DSA ${keySize}-bit`)
+              : keyAlgorithm.includes("ec") && keySize < 256
+                ? warn("cert-key-size", `EC ${keySize}-bit; use 256+`)
+                : pass("cert-key-size", `${keyAlgorithm.toUpperCase()} ${keySize}-bit`),
   );
 
   results.push(
@@ -373,10 +445,17 @@ export function redirectChecks(facts: AuditFacts): CheckResult[] {
 export function metadataChecks(facts: AuditFacts): CheckResult[] {
   const h = facts.html;
   if (!h) {
-    return ["title", "title-length", "description", "description-length", "canonical", "robots-meta", "og-basic", "og-image", "og-image-reachable", "twitter-card", "favicon", "manifest", "jsonld", "jsonld-valid", "hreflang", "lang", "charset", "viewport", "headings", "alt-text", "duplicate-meta"].map((key) => skip(key, "Metadata could not be read"));
+    return ["title", "title-length", "description", "description-length", "canonical", "canonical-self", "robots-meta", "og-basic", "og-image", "og-image-reachable", "og-image-metadata", "twitter-card", "favicon", "manifest", "apple-touch-icon", "apple-touch-icon-size", "manifest-fields", "manifest-icons", "theme-color", "mask-icon", "jsonld", "jsonld-valid", "hreflang", "canonical-og-url", "lang", "charset", "viewport", "headings", "alt-text", "duplicate-meta"].map((key) => skip(key, "Metadata could not be read"));
   }
 
   const results: CheckResult[] = [];
+  const normalizeUrl = (value: string): string => {
+    try {
+      return new URL(value, h.finalUrl).href.replace(/\/$/, "");
+    } catch {
+      return value.trim().replace(/\/$/, "");
+    }
+  };
   results.push(h.title ? pass("title", h.title) : fail("title", "No title tag"));
   results.push(
     !h.title
@@ -398,6 +477,13 @@ export function metadataChecks(facts: AuditFacts): CheckResult[] {
           : fail("description-length", `${h.description.length} characters`),
   );
   results.push(h.canonical ? pass("canonical", h.canonical) : fail("canonical", "No canonical link"));
+  results.push(
+    !h.canonical
+      ? skip("canonical-self", "No canonical link")
+      : normalizeUrl(h.canonical) === normalizeUrl(h.finalUrl)
+        ? pass("canonical-self", "Canonical points at this page")
+        : warn("canonical-self", `Canonical points at ${h.canonical}`),
+  );
   results.push(/noindex/i.test(h.robots) ? fail("robots-meta", h.robots) : pass("robots-meta", h.robots || "No robots meta; index/follow is implied"));
 
   const ogRequired = ["og:title", "og:description", "og:type", "og:url", "og:site_name"];
@@ -417,6 +503,18 @@ export function metadataChecks(facts: AuditFacts): CheckResult[] {
         ? pass("og-image-reachable", `Image returned ${h.ogImageStatus}`)
         : fail("og-image-reachable", `Image returned ${h.ogImageStatus || "no response"}`),
   );
+  const ogImageMeta = ["og:image:width", "og:image:height", "og:image:alt"];
+  const ogImagePresent = ogImageMeta.filter((key) => h.og[key]);
+  results.push(
+    !h.og["og:image"]
+      ? skip("og-image-metadata", "No og:image")
+      : ogImagePresent.length === ogImageMeta.length
+        ? pass("og-image-metadata", "Width, height and alt are present")
+        : warn(
+            "og-image-metadata",
+            `${ogImagePresent.length} of ${ogImageMeta.length} tags present: ${ogImageMeta.filter((key) => !h.og[key]).join(", ")} missing`,
+          ),
+  );
 
   const twitterRequired = ["twitter:card", "twitter:title", "twitter:description", "twitter:image"];
   const twitterPresent = twitterRequired.filter((key) => h.twitter[key]);
@@ -430,6 +528,121 @@ export function metadataChecks(facts: AuditFacts): CheckResult[] {
 
   results.push(h.icons.length || facts.files?.rootIcons.favicon ? pass("favicon", h.icons.map((icon) => icon.href).slice(0, 3).join(", ") || "/favicon.ico") : fail("favicon", "No favicon found"));
   results.push(facts.files?.manifest ? pass("manifest", h.manifestHref || "Web manifest found") : warn("manifest", "No web manifest"));
+
+  const files = facts.files;
+  const appleIcons = files?.appleTouchIcons ?? [];
+  const appleVerified = appleIcons.filter((icon) => statusOk(icon.status));
+  const appleDeclared = h.icons.some((icon) => /apple-touch-icon/i.test(icon.rel));
+  const appleLoaded = appleVerified.find((icon) =>
+    /^image\//i.test(icon.contentType || icon.declaredType),
+  );
+  const appleBytes = appleLoaded?.bytes
+    ? `, ${Math.max(1, Math.round(appleLoaded.bytes / 1024))} KB`
+    : "";
+  results.push(
+    appleLoaded
+      ? pass(
+          "apple-touch-icon",
+          `${appleLoaded.href}${appleLoaded.sizes ? ` (${appleLoaded.sizes})` : ""}${appleBytes}`,
+        )
+      : appleIcons.length
+        ? warn(
+            "apple-touch-icon",
+            appleIcons
+              .map((icon) => `${icon.href} returned ${icon.status || icon.error || "no response"}`)
+              .slice(0, 2)
+              .join("; "),
+          )
+        : appleDeclared
+          ? warn("apple-touch-icon", "Declared but could not be verified")
+          : files?.rootIcons.appleTouch
+            ? warn("apple-touch-icon", "/apple-touch-icon.png exists but is not declared in the head")
+            : warn("apple-touch-icon", "No apple-touch-icon declared"),
+  );
+
+  const appleSizes = appleVerified
+    .flatMap((icon) => icon.sizes.split(/\s+/))
+    .map((size) => /^(\d+)x(\d+)$/i.exec(size))
+    .filter((match): match is RegExpExecArray => Boolean(match))
+    .map((match) => Math.min(Number(match[1]), Number(match[2])));
+  const largestApple = appleSizes.length ? Math.max(...appleSizes) : 0;
+  results.push(
+    !appleVerified.length
+      ? skip(
+          "apple-touch-icon-size",
+          appleIcons.length || appleDeclared ? "Icon could not be verified" : "No apple-touch-icon",
+        )
+      : largestApple >= 180
+        ? pass("apple-touch-icon-size", `${largestApple}px declared`)
+        : largestApple > 0
+          ? warn("apple-touch-icon-size", `${largestApple}px declared; use at least 180×180`)
+          : warn("apple-touch-icon-size", "No sizes attribute; declare 180x180"),
+  );
+
+  results.push(
+    !h.themeColor
+      ? warn("theme-color", "No theme-color meta")
+      : /^(#[0-9a-f]{3,8}|(?:rgb|hsl|oklch|lab|lch|color)\(|transparent$)/i.test(h.themeColor.trim())
+        ? pass("theme-color", h.themeColor)
+        : warn("theme-color", `Unrecognised colour: ${h.themeColor}`),
+  );
+
+  const mask = files?.maskIcon ?? null;
+  const maskDeclared = h.icons.some((icon) => /(^|\s)mask-icon(\s|$)/i.test(icon.rel));
+  results.push(
+    !maskDeclared
+      ? info("mask-icon", "No mask-icon link")
+      : !mask
+        ? skip("mask-icon", "Icon could not be verified")
+        : statusOk(mask.status)
+          ? pass("mask-icon", mask.href)
+          : warn("mask-icon", `${mask.href} returned ${mask.status || "no response"}`),
+  );
+
+  const manifest = files?.manifestDetails;
+  if (!files) {
+    results.push(skip("manifest-fields", "Crawl files could not be read"));
+    results.push(skip("manifest-icons", "Crawl files could not be read"));
+  } else if (!manifest?.present) {
+    results.push(skip("manifest-fields", "No manifest"));
+    results.push(skip("manifest-icons", "No manifest"));
+  } else if (!manifest.valid) {
+    results.push(fail("manifest-fields", manifest.error || "Manifest did not parse"));
+    results.push(fail("manifest-icons", "Manifest did not parse"));
+  } else {
+    const core = [
+      manifest.name || manifest.shortName ? "name" : "",
+      manifest.startUrl ? "start_url" : "",
+      manifest.display ? "display" : "",
+      manifest.themeColor || manifest.backgroundColor ? "theme_color" : "",
+    ].filter(Boolean);
+    const manifestSource = manifest.href
+      ? ` · ${manifest.href}${manifest.status ? ` (${manifest.status})` : ""}`
+      : "";
+    results.push(
+      core.length === 4
+        ? pass("manifest-fields", `name, start_url, display and theme_color present${manifestSource}`)
+        : core.length >= 2
+          ? warn("manifest-fields", `${core.length} of 4 core fields present: ${core.join(", ")}${manifestSource}`)
+          : fail("manifest-fields", `Only ${core.length} of 4 core fields present${manifestSource}`),
+    );
+    const has192 = manifest.iconSizes.includes("192x192");
+    const has512 = manifest.iconSizes.includes("512x512");
+    const maskable = manifest.icons.some((icon) => /maskable/i.test(icon.purpose));
+    results.push(
+      !manifest.icons.length
+        ? fail("manifest-icons", "No icons in the manifest")
+        : has192 && has512
+          ? pass(
+              "manifest-icons",
+              `${manifest.icons.length} icons, including 192×192 and 512×512${maskable ? ", one maskable" : ""}`,
+            )
+          : warn(
+              "manifest-icons",
+              `${manifest.icons.length} icons; ${has192 ? "" : "192×192 missing "}${has512 ? "" : "512×512 missing"}${maskable ? "" : " · no maskable icon"}`.trim(),
+            ),
+    );
+  }
 
   const jsonLd = h.jsonLd;
   results.push(jsonLd.length ? pass("jsonld", `${jsonLd.length} block${jsonLd.length === 1 ? "" : "s"}: ${[...new Set(jsonLd.map((item) => item.type))].slice(0, 6).join(", ")}`) : warn("jsonld", "No JSON-LD"));
@@ -447,6 +660,14 @@ export function metadataChecks(facts: AuditFacts): CheckResult[] {
       : h.hreflang.some((item) => item.lang === "x-default") && h.hreflang.every((item) => item.href.startsWith("http"))
         ? pass("hreflang", `${h.hreflang.length} hreflang entries with x-default`)
         : warn("hreflang", `${h.hreflang.length} entries; check reciprocity and x-default`),
+  );
+  const ogUrl = h.og["og:url"] ?? "";
+  results.push(
+    !h.canonical || !ogUrl
+      ? info("canonical-og-url", "Canonical or og:url is missing")
+      : normalizeUrl(h.canonical) === normalizeUrl(ogUrl)
+        ? pass("canonical-og-url", "Canonical and og:url agree")
+        : warn("canonical-og-url", `canonical ${h.canonical} vs og:url ${ogUrl}`),
   );
   results.push(h.lang ? pass("lang", h.lang) : fail("lang", "No lang attribute"));
   results.push(/utf-?8/i.test(h.charset) ? pass("charset", h.charset) : warn("charset", h.charset || "No charset declared"));
@@ -478,7 +699,7 @@ export function crawlChecks(facts: AuditFacts): CheckResult[] {
   const f = facts.files;
   const h = facts.html;
   if (!f) {
-    return ["robots-exists", "robots-valid", "robots-sitemap", "robots-blocks", "robots-ai", "sitemap-exists", "sitemap-valid", "sitemap-host", "sitemap-sample", "sitemap-lastmod", "x-robots-tag", "noindex", "custom-404", "feed", "internal-links", "llms-txt", "llms-full", "ai-txt", "semantic-headings"].map((key) => skip(key, "Crawl files could not be read"));
+    return ["robots-exists", "robots-valid", "robots-sitemap", "robots-blocks", "robots-ai", "sitemap-exists", "sitemap-valid", "sitemap-host", "sitemap-sample", "sitemap-lastmod", "sitemap-titles", "sitemap-noindex", "sitemap-descriptions", "sitemap-canonical", "x-robots-tag", "noindex", "custom-404", "feed", "internal-links", "llms-txt", "llms-full", "ai-txt", "semantic-headings"].map((key) => skip(key, "Crawl files could not be read"));
   }
 
   const results: CheckResult[] = [];
@@ -522,6 +743,75 @@ export function crawlChecks(facts: AuditFacts): CheckResult[] {
       : new Date(f.sitemaps.lastmod).valueOf() > Date.now() + 86_400_000
         ? warn("sitemap-lastmod", `lastmod is in the future: ${f.sitemaps.lastmod}`)
         : pass("sitemap-lastmod", f.sitemaps.lastmod),
+  );
+  const pages = f.sitemaps.pages ?? [];
+  const missingTitles = pages.filter((entry) => !entry.title.trim()).length;
+  results.push(
+    pages.length < 2
+      ? skip("sitemap-titles", "Not enough sampled pages")
+      : f.sitemaps.duplicateTitles.length
+        ? warn(
+            "sitemap-titles",
+            `${f.sitemaps.duplicateTitles.length} duplicate title${f.sitemaps.duplicateTitles.length === 1 ? "" : "s"}`,
+            f.sitemaps.duplicateTitles.slice(0, 3).join("; "),
+          )
+        : missingTitles
+          ? warn("sitemap-titles", `${missingTitles} of ${pages.length} sampled pages have no title`)
+          : pass("sitemap-titles", `${pages.length} sampled pages have distinct titles`),
+  );
+  const noindexPages = pages.filter((entry) => /noindex/i.test(`${entry.robots} ${entry.xRobots}`));
+  results.push(
+    pages.length < 2
+      ? skip("sitemap-noindex", "Not enough sampled pages")
+      : noindexPages.length
+        ? fail(
+            "sitemap-noindex",
+            `${noindexPages.length} of ${pages.length} sampled pages are noindex`,
+            noindexPages.map((entry) => entry.url).slice(0, 5).join("\n"),
+          )
+        : pass("sitemap-noindex", `${pages.length} sampled pages are indexable`),
+  );
+  const descriptions = pages
+    .map((entry) => entry.description.trim().toLowerCase())
+    .filter(Boolean);
+  const duplicateDescriptions = [...new Set(descriptions.filter((value, index) => descriptions.indexOf(value) !== index))];
+  const missingDescriptions = pages.filter((entry) => !entry.description.trim()).length;
+  results.push(
+    pages.length < 2
+      ? skip("sitemap-descriptions", "Not enough sampled pages")
+      : duplicateDescriptions.length
+        ? warn(
+            "sitemap-descriptions",
+            `${duplicateDescriptions.length} duplicate description${duplicateDescriptions.length === 1 ? "" : "s"}`,
+            duplicateDescriptions.slice(0, 3).join("; "),
+          )
+        : missingDescriptions
+          ? warn("sitemap-descriptions", `${missingDescriptions} of ${pages.length} sampled pages have no description`)
+          : pass("sitemap-descriptions", `${pages.length} sampled pages have descriptions`),
+  );
+  const canonicalProblems = pages.filter((entry) => {
+    if (!entry.canonical) return true;
+    try {
+      const pageUrl = new URL(entry.url);
+      const canonical = new URL(entry.canonical, entry.url);
+      return (
+        hostOf(canonical.href) !== hostOf(pageUrl.href) ||
+        canonical.pathname.replace(/\/$/, "") !== pageUrl.pathname.replace(/\/$/, "")
+      );
+    } catch {
+      return true;
+    }
+  });
+  results.push(
+    pages.length < 2
+      ? skip("sitemap-canonical", "Not enough sampled pages")
+      : canonicalProblems.length
+        ? warn(
+            "sitemap-canonical",
+            `${canonicalProblems.length} of ${pages.length} sampled pages do not canonicalise to themselves`,
+            canonicalProblems.map((entry) => entry.url).slice(0, 5).join("\n"),
+          )
+        : pass("sitemap-canonical", `${pages.length} sampled pages have self-canonicals`),
   );
 
   const xRobots = facts.transport?.homepage.headers["x-robots-tag"] ?? "";
@@ -617,10 +907,19 @@ export function wellknownChecks(facts: AuditFacts): CheckResult[] {
   results.push(f.humansTxt ? pass("humans-txt", "humans.txt present") : info("humans-txt", "Not present"));
   results.push(f.adsTxt ? pass("ads-txt", "ads.txt present") : info("ads-txt", "Not present"));
   results.push(f.browserconfig ? pass("browserconfig", "browserconfig.xml present") : info("browserconfig", "Not present"));
+  const declaredFavicon = Boolean(
+    facts.html?.icons.some((icon) => /(^|\s)icon(\s|$)/i.test(icon.rel)),
+  );
+  const appleOk =
+    f.rootIcons.appleTouch || (f.appleTouchIcons ?? []).some((icon) => statusOk(icon.status));
+  const faviconOk = f.rootIcons.favicon || declaredFavicon;
   results.push(
-    f.rootIcons.favicon && f.rootIcons.appleTouch
-      ? pass("root-icons", "favicon.ico and apple-touch-icon.png resolve")
-      : warn("root-icons", `${f.rootIcons.favicon ? "" : "favicon.ico missing "}${f.rootIcons.appleTouch ? "" : "apple-touch-icon.png missing"}`.trim()),
+    faviconOk && appleOk
+      ? pass("root-icons", "Favicon and apple-touch-icon resolve")
+      : warn(
+          "root-icons",
+          `${faviconOk ? "" : "favicon missing "}${appleOk ? "" : "apple-touch-icon missing"}`.trim(),
+        ),
   );
 
   return results;
@@ -634,7 +933,7 @@ export function securityChecks(facts: AuditFacts): CheckResult[] {
   const s = facts.security;
   const d = facts.dns;
   if (!s) {
-    return ["csp", "csp-unsafe", "csp-directives", "csp-report", "xcto", "frame-options", "referrer-policy", "permissions-policy", "coop", "corp", "cookies-secure", "cookies-httponly", "cookies-samesite", "sri", "forms-https", "trackers", "consent", "privacy-page", "cookie-page", "terms-page", "accessibility-page", "spf", "dkim", "dmarc", "bimi", "mta-sts-dns", "tls-rpt", "dnssec", "caa", "registrar-lock", "registrar-expiry", "server-disclosure"].map((key) => skip(key, "Security checks could not run"));
+    return ["csp", "csp-unsafe", "csp-directives", "csp-report", "xcto", "frame-options", "referrer-policy", "permissions-policy", "coop", "corp", "coep", "origin-agent-cluster", "cross-domain-policy", "cookies-secure", "cookies-httponly", "cookies-samesite", "cookies-samesite-none", "sri", "forms-https", "trackers", "consent", "privacy-page", "cookie-page", "terms-page", "accessibility-page", "spf", "spf-records", "spf-lookups", "dkim", "dkim-key", "dmarc", "dmarc-reporting", "dmarc-testing", "dmarc-subdomains", "dmarc-obsolete-tags", "dmarc-external-report", "bimi", "bimi-assets", "mta-sts-dns", "mta-sts-policy", "tls-rpt", "tls-rpt-rua", "mx-redundancy", "dane-tlsa", "dnssec", "caa", "caa-issue", "registrar-lock", "registrar-expiry", "server-disclosure"].map((key) => skip(key, "Security checks could not run"));
   }
 
   const results: CheckResult[] = [];
@@ -666,19 +965,52 @@ export function securityChecks(facts: AuditFacts): CheckResult[] {
   results.push(s.permissionsPolicy ? pass("permissions-policy", s.permissionsPolicy) : warn("permissions-policy", "No Permissions-Policy"));
   results.push(s.coop ? pass("coop", s.coop) : info("coop", "Not set"));
   results.push(s.corp ? pass("corp", s.corp) : info("corp", "Not set"));
+  const coep = s.headers["cross-origin-embedder-policy"] ?? "";
+  results.push(
+    /require-corp|credentialless/i.test(coep)
+      ? pass("coep", coep)
+      : info("coep", coep || "Not set; only needed for cross-origin isolation"),
+  );
+  const originAgentCluster = s.headers["origin-agent-cluster"] ?? "";
+  results.push(
+    /\?1/i.test(originAgentCluster)
+      ? pass("origin-agent-cluster", originAgentCluster)
+      : info("origin-agent-cluster", originAgentCluster || "Not set; optional"),
+  );
+  const crossDomainPolicy = s.headers["x-permitted-cross-domain-policies"] ?? "";
+  results.push(
+    /^(none|master-only)$/i.test(crossDomainPolicy.trim())
+      ? pass("cross-domain-policy", crossDomainPolicy)
+      : crossDomainPolicy
+        ? warn("cross-domain-policy", crossDomainPolicy)
+        : info("cross-domain-policy", "Not set"),
+  );
 
   if (!s.cookies.length) {
     results.push(pass("cookies-secure", "No cookies set on the homepage"));
     results.push(pass("cookies-httponly", "No cookies set on the homepage"));
     results.push(pass("cookies-samesite", "No cookies set on the homepage"));
+    results.push(pass("cookies-samesite-none", "No cookies set on the homepage"));
   } else {
     const insecure = s.cookies.filter((cookie) => !cookie.secure);
     const noHttpOnly = s.cookies.filter((cookie) => !cookie.httpOnly);
     const sensitiveNoHttpOnly = noHttpOnly.filter((cookie) => /sess|auth|token|login|user/i.test(cookie.name));
     const noSameSite = s.cookies.filter((cookie) => !cookie.sameSite);
+    const noneInsecure = s.cookies.filter(
+      (cookie) => /^none$/i.test(cookie.sameSite) && !cookie.secure,
+    );
     results.push(insecure.length ? fail("cookies-secure", `${insecure.length} of ${s.cookies.length} cookies lack Secure`) : pass("cookies-secure", `All ${s.cookies.length} cookies are Secure`));
     results.push(sensitiveNoHttpOnly.length ? fail("cookies-httponly", `${sensitiveNoHttpOnly.length} session-like cookies lack HttpOnly`) : noHttpOnly.length ? warn("cookies-httponly", `${noHttpOnly.length} of ${s.cookies.length} cookies lack HttpOnly`) : pass("cookies-httponly", "All cookies are HttpOnly"));
     results.push(noSameSite.length ? warn("cookies-samesite", `${noSameSite.length} of ${s.cookies.length} cookies lack SameSite`) : pass("cookies-samesite", "All cookies set SameSite"));
+    results.push(
+      noneInsecure.length
+        ? fail(
+            "cookies-samesite-none",
+            `${noneInsecure.length} cookie${noneInsecure.length === 1 ? "" : "s"} set SameSite=None without Secure`,
+            noneInsecure.map((cookie) => cookie.name).join(", "),
+          )
+        : pass("cookies-samesite-none", "No SameSite=None cookie is missing Secure"),
+    );
   }
 
   results.push(
@@ -690,12 +1022,25 @@ export function securityChecks(facts: AuditFacts): CheckResult[] {
   );
   const insecureForms = s.forms.filter((form) => form.insecure);
   results.push(insecureForms.length ? fail("forms-https", `${insecureForms.length} form${insecureForms.length === 1 ? "" : "s"} post over HTTP`) : pass("forms-https", s.forms.length ? "All forms post over HTTPS" : "No forms to test"));
-  results.push(s.trackers.length ? info("trackers", s.trackers.join(", ")) : pass("trackers", "No third-party trackers detected"));
+  // Prefer the richer detector used by the Other information section so the
+  // appendix and the report agree. Fall back to the homepage regexes when the
+  // crawl files (and therefore the detector) were unavailable.
+  const detectedProviders = facts.files?.thirdParties?.providers ?? [];
+  const detectedTrackers = detectedProviders
+    .filter((provider) =>
+      ["advertising", "analytics", "tag-manager", "session-replay"].includes(provider.category),
+    )
+    .map((provider) => provider.name);
+  const trackers = [...new Set(detectedTrackers.length ? detectedTrackers : s.trackers)];
+  const consentTools = [
+    ...new Set([...(facts.files?.thirdParties?.consent ?? []), ...s.consent]),
+  ];
+  results.push(trackers.length ? info("trackers", trackers.join(", ")) : pass("trackers", "No third-party trackers detected"));
   results.push(
-    s.trackers.length && !s.consent.length
+    trackers.length && !consentTools.length
       ? warn("consent", "Trackers are present but no consent tool was detected")
-      : s.consent.length
-        ? pass("consent", s.consent.join(", "))
+      : consentTools.length
+        ? pass("consent", consentTools.join(", "))
         : pass("consent", "No trackers requiring consent detected"),
   );
 
@@ -705,40 +1050,229 @@ export function securityChecks(facts: AuditFacts): CheckResult[] {
   results.push(s.legal.accessibility ? pass("accessibility-page", "Accessibility statement found") : info("accessibility-page", "No accessibility statement found"));
 
   const e = d?.email;
+  const spf = e?.spf;
+  const dmarc = e?.dmarc;
   results.push(
-    !e?.spf.present
+    !spf?.present
       ? fail("spf", "No SPF record")
-      : e.spf.lookupCount > 10
-        ? warn("spf", `SPF has ${e.spf.lookupCount} DNS lookups; the limit is 10`)
-        : e.spf.qualifier === "-"
-          ? pass("spf", "SPF ends with -all")
-          : e.spf.qualifier === "~"
-            ? pass("spf", "SPF ends with ~all")
-            : warn("spf", `SPF ends with ${e.spf.qualifier || "no explicit all"}all`),
+      : spf.qualifier === "-"
+        ? pass("spf", "SPF ends with -all")
+        : spf.qualifier === "~"
+          ? pass("spf", "SPF ends with ~all")
+          : warn("spf", `SPF ends with ${spf.qualifier || "no explicit all"}all`),
   );
-  results.push(e?.dkimSelectors.length ? pass("dkim", `Selectors: ${e.dkimSelectors.join(", ")}`) : warn("dkim", "No common DKIM selector found"));
   results.push(
-    !e?.dmarc.present
-      ? fail("dmarc", "No DMARC record")
-      : e.dmarc.policy === "reject" || e.dmarc.policy === "quarantine"
-        ? pass("dmarc", `p=${e.dmarc.policy}`)
-        : warn("dmarc", `p=${e.dmarc.policy || "none"}`),
+    !spf?.present
+      ? skip("spf-records", "No SPF record")
+      : spf.records.length === 1
+        ? pass("spf-records", "Exactly one SPF record")
+        : fail("spf-records", `${spf.records.length} SPF records; receivers may return permerror`),
   );
+  const voidLookups = spf?.voidLookups ?? 0;
+  const voidNote = voidLookups ? ` · ${voidLookups} void` : "";
+  results.push(
+    !spf?.present
+      ? skip("spf-lookups", "No SPF record")
+      : voidLookups > 2
+        ? fail(
+            "spf-lookups",
+            `${spf.lookupCount} DNS lookups, ${voidLookups} void (void limit 2)`,
+          )
+        : spf.lookupCount > 10
+          ? fail("spf-lookups", `${spf.lookupCount} DNS lookups (limit 10)${voidNote}`)
+          : spf.lookupCount > 8
+            ? warn("spf-lookups", `${spf.lookupCount} DNS lookups; 10 is the limit${voidNote}`)
+            : pass("spf-lookups", `${spf.lookupCount} DNS lookups${voidNote}`),
+  );
+
+  results.push(e?.dkimSelectors.length ? pass("dkim", `Selectors: ${e.dkimSelectors.join(", ")}`) : e?.dkimKeys.length ? info("dkim", "Only revoked keys (p= empty); the domain may not send mail") : warn("dkim", "No common DKIM selector found"));
+  const dkimKeys = e?.dkimKeys ?? [];
+  const revokedKeys = dkimKeys.filter((key) => key.revoked);
+  const weakKeys = dkimKeys.filter((key) => key.bits !== null && key.bits < 1024);
+  const shortKeys = dkimKeys.filter((key) => key.bits !== null && key.bits >= 1024 && key.bits < 2048);
+  const sha1Keys = dkimKeys.filter(
+    (key) => key.hashAlgorithms.length > 0 && !key.hashAlgorithms.includes("sha256"),
+  );
+  results.push(
+    !dkimKeys.length
+      ? skip("dkim-key", "No DKIM key found")
+      : revokedKeys.length === dkimKeys.length
+        ? warn("dkim-key", `All ${dkimKeys.length} key${dkimKeys.length === 1 ? " is" : "s are"} revoked (p= empty)`)
+        : revokedKeys.length
+          ? warn("dkim-key", `${revokedKeys.length} revoked key${revokedKeys.length === 1 ? "" : "s"} (p= empty)`)
+          : weakKeys.length
+            ? fail("dkim-key", `${weakKeys.length} key${weakKeys.length === 1 ? "" : "s"} below 1024 bits`)
+            : shortKeys.length
+              ? warn("dkim-key", `${shortKeys.length} key${shortKeys.length === 1 ? "" : "s"} below 2048 bits`)
+              : sha1Keys.length
+                ? warn("dkim-key", `${sha1Keys.length} key${sha1Keys.length === 1 ? "" : "s"} only advertise SHA-1`)
+                : pass("dkim-key", dkimKeys.map((key) => `${key.selector} ${key.bits ?? "?"}-bit`).join(", ")),
+  );
+
+  const dmarcTags = [
+    dmarc?.adkim ? `adkim=${dmarc.adkim}` : "",
+    dmarc?.aspf ? `aspf=${dmarc.aspf}` : "",
+    dmarc?.psd ? `psd=${dmarc.psd}` : "",
+  ].filter(Boolean);
+  results.push(
+    !dmarc?.present
+      ? fail("dmarc", "No DMARC record")
+      : dmarc.policy === "reject" || dmarc.policy === "quarantine"
+        ? pass(
+            "dmarc",
+            `p=${dmarc.policy}${dmarcTags.length ? ` · ${dmarcTags.join(" · ")}` : ""}`,
+          )
+        : warn("dmarc", `p=${dmarc.policy || "none"}`),
+  );
+  results.push(
+    !dmarc?.present
+      ? skip("dmarc-reporting", "No DMARC record")
+      : dmarc.rua
+        ? pass(
+            "dmarc-reporting",
+            `${dmarc.rua}${dmarc.fo ? ` · fo=${dmarc.fo}` : ""}${dmarc.ruf ? " · ruf set" : ""}`,
+          )
+        : warn("dmarc-reporting", "No rua= aggregate report address"),
+  );
+  results.push(
+    !dmarc?.present
+      ? skip("dmarc-testing", "No DMARC record")
+      : dmarc.testing
+        ? dmarc.policy === "reject" || dmarc.policy === "quarantine"
+          ? warn("dmarc-testing", "t=y: the policy is applied one level lower")
+          : info("dmarc-testing", "t=y has no effect on p=none")
+        : dmarc.policy === "reject" || dmarc.policy === "quarantine"
+          ? pass("dmarc-testing", "Policy is enforced")
+          : info("dmarc-testing", `p=${dmarc.policy || "none"} does not enforce a policy`),
+  );
+  const subdomainPolicy = dmarc?.subdomainPolicy || dmarc?.policy || "none";
+  const nonExistentPolicy = dmarc?.nonExistentPolicy || subdomainPolicy;
+  const enforcing = (policy: string) => policy === "reject" || policy === "quarantine";
+  results.push(
+    !dmarc?.present
+      ? skip("dmarc-subdomains", "No DMARC record")
+      : enforcing(subdomainPolicy) && enforcing(nonExistentPolicy)
+        ? pass("dmarc-subdomains", `effective sp=${subdomainPolicy}, np=${nonExistentPolicy}`)
+        : warn("dmarc-subdomains", `effective sp=${subdomainPolicy}, np=${nonExistentPolicy}`),
+  );
+  results.push(
+    !dmarc?.present
+      ? skip("dmarc-obsolete-tags", "No DMARC record")
+      : dmarc.pct !== null
+        ? info("dmarc-obsolete-tags", `pct=${dmarc.pct} is historic in RFC 9989; use t=y|n`)
+        : pass("dmarc-obsolete-tags", "No historic pct tag"),
+  );
+  results.push(
+    !dmarc?.present || !dmarc.externalReporting.length
+      ? skip("dmarc-external-report", dmarc?.rua ? "No external report domain" : "No rua= address")
+      : dmarc.externalReporting.every((entry) => entry.authorized)
+        ? pass("dmarc-external-report", `${dmarc.externalReporting.length} external report domain${dmarc.externalReporting.length === 1 ? "" : "s"} authorised`)
+        : warn(
+            "dmarc-external-report",
+            `${dmarc.externalReporting.filter((entry) => !entry.authorized).length} external report domain${dmarc.externalReporting.filter((entry) => !entry.authorized).length === 1 ? "" : "s"} not authorised`,
+            dmarc.externalReporting
+              .filter((entry) => !entry.authorized)
+              .map((entry) => `${entry.target}: ${entry.record || "no authorisation record"}`)
+              .join("\n"),
+          ),
+  );
+
   results.push(e?.bimi ? pass("bimi", "BIMI record present") : info("bimi", "No BIMI record"));
+  results.push(
+    !e?.bimi
+      ? info("bimi-assets", "No BIMI record")
+      : !e.bimiLogo
+        ? warn("bimi-assets", "BIMI record has no l= logo")
+        : !/^https:\/\//i.test(e.bimiLogo)
+          ? fail("bimi-assets", `Logo is not HTTPS: ${e.bimiLogo}`)
+          : e.bimiAuthority && !/^https:\/\//i.test(e.bimiAuthority)
+            ? warn("bimi-assets", `Authority is not HTTPS: ${e.bimiAuthority}`)
+            : pass("bimi-assets", e.bimiAuthority ? "Logo and authority are HTTPS" : "Logo is HTTPS; no authority (VMC)"),
+  );
+
   results.push(e?.mtaSts ? pass("mta-sts-dns", "_mta-sts TXT present") : warn("mta-sts-dns", "No _mta-sts TXT record"));
+  const mtaSts = facts.transport?.mtaSts ?? null;
+  results.push(
+    !e?.mtaSts && !mtaSts?.present
+      ? info("mta-sts-policy", "No MTA-STS policy")
+      : !mtaSts
+        ? fail("mta-sts-policy", "_mta-sts TXT exists but the policy could not be fetched")
+        : !mtaSts.present
+          ? warn("mta-sts-policy", mtaSts.error || `Policy returned ${mtaSts.status}`)
+          : mtaSts.mode !== "enforce"
+            ? warn("mta-sts-policy", `mode=${mtaSts.mode || "missing"}`)
+            : mtaSts.maxAge < 604_800
+              ? warn("mta-sts-policy", `max_age=${mtaSts.maxAge}; use at least 604800`)
+              : pass("mta-sts-policy", `mode=enforce, max_age=${mtaSts.maxAge}, ${mtaSts.mx.length} MX`),
+  );
+
   results.push(e?.tlsRpt ? pass("tls-rpt", "_smtp._tls TXT present") : info("tls-rpt", "No TLS-RPT record"));
+  results.push(
+    !e?.tlsRpt
+      ? info("tls-rpt-rua", "No TLS-RPT record")
+      : e.tlsRptRua
+        ? pass("tls-rpt-rua", e.tlsRptRua)
+        : warn("tls-rpt-rua", "TLS-RPT record has no rua="),
+  );
+
+  const mxRecords = d?.records.mx ?? [];
+  const nullMx = mxRecords.some((item) => item.host === "." || item.host === "");
+  results.push(
+    !mxRecords.length
+      ? info("mx-redundancy", "No MX records; the domain likely does not receive email")
+      : nullMx
+        ? info("mx-redundancy", "Null MX: the domain does not accept email")
+        : mxRecords.length >= 2
+          ? pass("mx-redundancy", `${mxRecords.length} MX records`)
+          : warn("mx-redundancy", "Only one MX record"),
+  );
 
   const signed = Boolean(d?.records.ds && d?.records.dnskey);
-  results.push(signed || d?.records.ad ? pass("dnssec", "DNSSEC is signed") : warn("dnssec", "Zone is not signed with DNSSEC"));
+  const dane = e?.dane ?? [];
+  const daneHosts = dane.filter((entry) => entry.records.length > 0);
+  results.push(
+    !dane.length || !mxRecords.length
+      ? info("dane-tlsa", "No MX records to check")
+      : !daneHosts.length
+        ? info("dane-tlsa", "No TLSA records")
+        : signed
+          ? pass("dane-tlsa", `${daneHosts.length} MX host${daneHosts.length === 1 ? "" : "s"} with TLSA`)
+          : warn("dane-tlsa", "TLSA records present but DNSSEC is not enabled"),
+  );
+
+  results.push(
+    d?.records.ds && d?.records.dnskey
+      ? pass("dnssec", "DS at the parent and DNSKEY at the zone")
+      : d?.records.ad
+        ? pass("dnssec", "Resolver reports the AD bit")
+        : d?.records.ds && !d?.records.dnskey
+          ? fail("dnssec", "DS at the parent but no DNSKEY")
+          : d?.records.dnskey && !d?.records.ds
+            ? warn("dnssec", "DNSKEY present but no DS at the parent")
+            : warn("dnssec", "Zone is not signed with DNSSEC"),
+  );
   results.push(d?.records.caa.length ? pass("caa", `${d.records.caa.length} CAA record${d.records.caa.length === 1 ? "" : "s"}`) : warn("caa", "No CAA records"));
+  const caaIssue = (d?.records.caa ?? []).filter((entry) => /^(issue|issuewild)$/i.test(entry.tag));
+  results.push(
+    !d?.records.caa.length
+      ? skip("caa-issue", "No CAA records")
+      : caaIssue.length
+        ? pass("caa-issue", `${caaIssue.length} issue/issuewild tag${caaIssue.length === 1 ? "" : "s"}`)
+        : warn("caa-issue", "CAA exists but has no issue/issuewild tag"),
+  );
 
   const statuses = d?.rdap?.statuses ?? [];
+  const isUk = /\.uk$/i.test(facts.domain);
   results.push(
     !d?.rdap
       ? skip("registrar-lock", "Registry data unavailable")
-      : statuses.some((status) => /clientTransferProhibited/i.test(status))
-        ? pass("registrar-lock", "clientTransferProhibited is set")
-        : warn("registrar-lock", "Transfer lock not detected"),
+      : isUk
+        ? skip("registrar-lock", "Nominet does not publish a transfer-lock status in RDAP")
+        : statuses.length === 0
+          ? skip("registrar-lock", "The registry did not return status values")
+          : statuses.some((status) => /clientTransferProhibited/i.test(status))
+            ? pass("registrar-lock", "clientTransferProhibited is set")
+            : warn("registrar-lock", "Transfer lock not detected"),
   );
   const expires = d?.rdap?.expires ? new Date(d.rdap.expires).valueOf() : 0;
   const days = expires ? Math.round((expires - Date.now()) / 86_400_000) : 0;
@@ -767,13 +1301,13 @@ export function securityChecks(facts: AuditFacts): CheckResult[] {
 export function performanceChecks(facts: AuditFacts): CheckResult[] {
   const p = facts.performance;
   if (!p) {
-    return ["ttfb", "html-size", "compression", "render-blocking", "asset-weight", "image-formats", "font-display", "third-parties", "dom-size", "caching", "cdn", "broken-images", "psi-performance", "psi-accessibility", "psi-best-practices", "psi-seo", "cwv-lcp", "cwv-cls", "cwv-inp"].map((key) => skip(key, "Performance checks could not run"));
+    return ["ttfb", "html-size", "compression", "render-blocking", "asset-weight", "image-formats", "font-display", "third-parties", "dom-size", "caching", "html-cache-control", "cdn", "broken-images", "psi-performance", "psi-accessibility", "psi-best-practices", "psi-seo", "cwv-lcp", "cwv-cls", "cwv-inp"].map((key) => skip(key, "Performance checks could not run"));
   }
 
   const results: CheckResult[] = [];
   results.push(p.ttfbMs < 500 ? pass("ttfb", `${p.ttfbMs} ms`) : p.ttfbMs < 1000 ? warn("ttfb", `${p.ttfbMs} ms`) : fail("ttfb", `${p.ttfbMs} ms`));
   results.push(p.htmlBytes < 100_000 ? pass("html-size", `${Math.round(p.htmlBytes / 1024)} KB`) : p.htmlBytes < 200_000 ? warn("html-size", `${Math.round(p.htmlBytes / 1024)} KB`) : fail("html-size", `${Math.round(p.htmlBytes / 1024)} KB`));
-  results.push(/br|gzip|deflate/i.test(p.contentEncoding) ? pass("compression", p.contentEncoding) : warn("compression", p.contentEncoding || "No compression"));
+  results.push(/br|gzip|deflate|zstd/i.test(p.contentEncoding) ? pass("compression", p.contentEncoding) : warn("compression", p.contentEncoding || "No compression"));
   results.push(p.renderBlocking <= 3 ? pass("render-blocking", `${p.renderBlocking} blocking asset${p.renderBlocking === 1 ? "" : "s"}`) : p.renderBlocking <= 6 ? warn("render-blocking", `${p.renderBlocking} blocking assets`) : fail("render-blocking", `${p.renderBlocking} blocking assets`));
   results.push(
     !p.assetBytes
@@ -802,9 +1336,26 @@ export function performanceChecks(facts: AuditFacts): CheckResult[] {
         ? fail("font-display", p.fontDisplay)
         : info("font-display", p.fontDisplay),
   );
-  results.push(p.thirdPartyDomains.length <= 3 ? pass("third-parties", `${p.thirdPartyDomains.length} third-party domain${p.thirdPartyDomains.length === 1 ? "" : "s"}`) : p.thirdPartyDomains.length <= 8 ? warn("third-parties", `${p.thirdPartyDomains.length} third-party domains`) : fail("third-parties", `${p.thirdPartyDomains.length} third-party domains`));
+  // Use the same sampled set as Other information when it is available, so the
+  // scored count and the inventory do not tell different stories.
+  const thirdPartyDomains =
+    facts.files?.thirdParties?.domains.length ?? p.thirdPartyDomains.length;
+  results.push(thirdPartyDomains <= 3 ? pass("third-parties", `${thirdPartyDomains} third-party domain${thirdPartyDomains === 1 ? "" : "s"}`) : thirdPartyDomains <= 8 ? warn("third-parties", `${thirdPartyDomains} third-party domains`) : fail("third-parties", `${thirdPartyDomains} third-party domains`));
   results.push(p.domSize < 1500 ? pass("dom-size", `${p.domSize} elements`) : p.domSize < 3000 ? warn("dom-size", `${p.domSize} elements`) : fail("dom-size", `${p.domSize} elements`));
   results.push(/max-age|immutable|public/i.test(p.cacheControl) ? pass("caching", p.cacheControl) : warn("caching", p.cacheControl || "No Cache-Control"));
+  const htmlCache = facts.transport?.homepage.headers["cache-control"] ?? "";
+  const htmlMaxAge = /max-age\s*=\s*(\d+)/i.exec(htmlCache)?.[1] ?? "";
+  results.push(
+    !facts.transport
+      ? skip("html-cache-control", "Transport data unavailable")
+      : !htmlCache
+        ? info("html-cache-control", "No Cache-Control on the HTML")
+        : /no-store|no-cache/i.test(htmlCache) || htmlMaxAge === "0"
+          ? pass("html-cache-control", htmlCache)
+          : htmlMaxAge
+            ? warn("html-cache-control", `HTML is cached for ${htmlMaxAge}s: ${htmlCache}`)
+            : info("html-cache-control", htmlCache),
+  );
   results.push(p.cdn !== "None detected" ? pass("cdn", p.cdn) : warn("cdn", "No CDN detected"));
   results.push(p.brokenImages.length ? fail("broken-images", `${p.brokenImages.length} broken image${p.brokenImages.length === 1 ? "" : "s"}`, p.brokenImages.join("\n")) : pass("broken-images", "Sampled images resolve"));
 

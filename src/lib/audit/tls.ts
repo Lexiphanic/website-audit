@@ -31,6 +31,11 @@ interface LabEndpoint {
     chain?: { certs?: LabCert[] };
     supportsAlpn?: boolean;
     alpnProtocols?: string[] | string;
+    ocspStapling?: boolean | number;
+    hasSct?: boolean | number;
+    supportsAead?: boolean | number;
+    supportsRc4?: boolean | number;
+    forwardSecrecy?: number;
   };
 }
 
@@ -60,6 +65,11 @@ export interface LabsSummary {
   cipher: string;
   protocol: string;
   http2: boolean;
+  ocspStapling: boolean | null;
+  hasSct: boolean | null;
+  supportsAead: boolean | null;
+  supportsRc4: boolean | null;
+  forwardSecrecy: number | null;
   error?: string;
 }
 
@@ -90,6 +100,8 @@ function certFromCrt(entry: CrtEntry, daysRemaining: number): CertificateInfo {
     serial: entry.serial_number ?? "",
     fingerprint: "",
     chainLength: 1,
+    keyAlgorithm: "",
+    keySize: null,
     authorized: daysRemaining > 0,
     authorizationError: daysRemaining > 0 ? "" : "Certificate has expired",
   };
@@ -112,6 +124,8 @@ function certFromLab(cert: LabCert): CertificateInfo {
     serial: cert.serialNumber ?? "",
     fingerprint: cert.sha256Hash ?? "",
     chainLength: 1,
+    keyAlgorithm: cert.keyAlg ?? "",
+    keySize: typeof cert.keySize === "number" ? cert.keySize : null,
     authorized: daysRemaining > 0,
     authorizationError: daysRemaining > 0 ? "" : "Certificate has expired",
   };
@@ -123,7 +137,7 @@ export async function certificateFromCrt(domain: string): Promise<CertificateInf
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
       const response = await fetch(url, {
-        signal: AbortSignal.timeout(8_000),
+        signal: AbortSignal.timeout(5_000),
         headers: {
           accept: "application/json",
           "user-agent":
@@ -141,7 +155,7 @@ export async function certificateFromCrt(domain: string): Promise<CertificateInf
       return certFromCrt(latest, daysRemaining);
     } catch {
       if (attempt < 1) {
-        await new Promise((resolve) => setTimeout(resolve, 1000));
+        await new Promise((resolve) => setTimeout(resolve, 500));
       }
     }
   }
@@ -157,8 +171,22 @@ function emptyLabs(state: "error" | "pending", error?: string): LabsSummary {
     cipher: "",
     protocol: "",
     http2: false,
+    ocspStapling: null,
+    hasSct: null,
+    supportsAead: null,
+    supportsRc4: null,
+    forwardSecrecy: null,
     error,
   };
+}
+
+function labFlag(value: unknown): boolean | null {
+  if (typeof value === "boolean") return value;
+  // SSL Labs uses 0/1 for flags, but `hasSct` is the number of embedded SCTs.
+  if (typeof value === "number") return value > 0;
+  if (value === "1") return true;
+  if (value === "0") return false;
+  return null;
 }
 
 function parseLab(data: LabResponse): LabsSummary {
@@ -204,6 +232,11 @@ function parseLab(data: LabResponse): LabsSummary {
     cipher: "",
     protocol: protocols.map((item) => `${item.name ?? "TLS"} ${item.version ?? ""}`.trim()).join(", "),
     http2: Boolean(details?.supportsAlpn && alpn.some((value) => value.includes("h2"))),
+    ocspStapling: labFlag(details?.ocspStapling),
+    hasSct: labFlag(details?.hasSct),
+    supportsAead: labFlag(details?.supportsAead),
+    supportsRc4: labFlag(details?.supportsRc4),
+    forwardSecrecy: typeof details?.forwardSecrecy === "number" ? details.forwardSecrecy : null,
   };
 }
 
@@ -250,6 +283,11 @@ export function emptyTlsProbe(error: string): TlsProbe {
     grade: "",
     source: "",
     pending: false,
+    ocspStapling: null,
+    hasSct: null,
+    supportsAead: null,
+    supportsRc4: null,
+    forwardSecrecy: null,
     error,
   };
 }
@@ -264,6 +302,11 @@ export function tlsFromLabs(summary: LabsSummary, fallback: CertificateInfo | nu
     grade: summary.grade,
     source: summary.certificate ? "SSL Labs" : fallback ? "crt.sh" : "",
     pending: summary.state === "pending",
+    ocspStapling: summary.ocspStapling,
+    hasSct: summary.hasSct,
+    supportsAead: summary.supportsAead,
+    supportsRc4: summary.supportsRc4,
+    forwardSecrecy: summary.forwardSecrecy,
     error: summary.error,
   };
 }
