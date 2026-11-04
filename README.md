@@ -299,6 +299,13 @@ Edge's **Print → Save as PDF**; the in-page button calls `window.print()`.
   sampled HTML pages without executing JavaScript, so GTM-injected pixels and
   server-side tags may be missed. CDN evidence is header-based and can be
   spoofed by a proxy. The performance check counts the same third-party hosts.
+- The compression check makes a second request with
+  `Accept-Encoding: br, gzip, zstd` and reads only the headers. The HTML fetch
+  itself stays uncompressed so the parser sees text. Module scripts are deferred
+  by default and are not counted as render-blocking.
+- OCSP stapling is informational. Some CAs, including Google Trust Services,
+  publish CRLs but no OCSP responder, so there is nothing to staple even though
+  the certificate is valid.
 - Registries differ in what they expose over RDAP. `.uk` does not publish a
   transfer-lock status, so that check is marked "not checked" rather than a
   warning.
