@@ -15,7 +15,8 @@ The repository is named `client-audit-lexiphanic-co-uk`, matching the Worker in
 ```bash
 bun install
 bun run dev                 # astro dev on http://localhost:4321
-bun run build               # astro build (the deploy build)
+bun run build               # astro check + astro build (the deploy build)
+bun run test                # bun test unit tests
 bun run check               # astro check (the only type gate)
 bun run preview             # preview the built Worker
 
@@ -24,8 +25,8 @@ bun run db:migrate:remote   # deployed D1 schema
 bunx wrangler types         # regenerate worker-configuration.d.ts
 ```
 
-Use Bun for everything. Verify with `bun run check` and `bun run build`. There is
-no test or lint script; do not invent one.
+Use Bun for everything. Verify with `bun run check`, `bun run test` and
+`bun run build`. There is no lint script.
 
 **Never deploy by hand.** Workers Builds deploys on push to `main`. A manual
 `wrangler deploy` publishes a version that matches no commit. Push and stop.

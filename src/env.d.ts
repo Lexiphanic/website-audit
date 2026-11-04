@@ -1,3 +1,5 @@
+/// <reference types="bun" />
+
 interface Env {
   TURNSTILE_SECRET?: string;
   PSI_API_KEY?: string;

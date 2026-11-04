@@ -1370,3 +1370,85 @@
     display: none !important;
   }
 }
+/* ------------------------------------------------------------------
+   Report navigation and filters
+------------------------------------------------------------------ */
+.report-toc {
+  position: sticky;
+  top: 4.8rem;
+  z-index: 30;
+  display: flex;
+  gap: 0.35rem;
+  overflow-x: auto;
+  margin: 0 auto 1.5rem;
+  padding: 0.45rem;
+  border: 1px solid var(--color-line);
+  border-radius: 999px;
+  background: rgba(18, 10, 28, 0.82);
+  backdrop-filter: blur(16px);
+  scrollbar-width: none;
+}
+.report-toc::-webkit-scrollbar {
+  display: none;
+}
+.report-toc a {
+  flex: none;
+  border-radius: 999px;
+  padding: 0.35rem 0.75rem;
+  color: var(--color-muted);
+  font-size: 0.75rem;
+  font-weight: 500;
+  transition: color 0.2s var(--ease-brand), background 0.2s var(--ease-brand);
+}
+.report-toc a:hover {
+  background: rgba(196, 181, 253, 0.1);
+  color: var(--color-cream);
+}
+.report-section,
+.report-category {
+  scroll-margin-top: 7.5rem;
+}
+.report-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--color-line);
+  border-radius: 14px;
+  background: rgba(36, 22, 54, 0.25);
+}
+.report-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid var(--color-line);
+  border-radius: 999px;
+  padding: 0.3rem 0.65rem;
+  color: var(--color-muted);
+  font-size: 0.74rem;
+  transition: border-color 0.2s var(--ease-brand), color 0.2s var(--ease-brand), background 0.2s var(--ease-brand);
+}
+.report-filter span {
+  color: var(--color-violet-300);
+  font-weight: 600;
+}
+.report-filter:hover,
+.report-filter.is-active {
+  border-color: var(--color-violet-500);
+  background: rgba(139, 92, 246, 0.12);
+  color: var(--color-cream);
+}
+.report-check[hidden] {
+  display: none !important;
+}
+.report-category[hidden] {
+  display: none !important;
+}
+@media print {
+  .report-toc,
+  .report-filters {
+    display: none !important;
+  }
+}

@@ -34,18 +34,18 @@ function imageFormat(src: string): string {
   return ext ? ext.toUpperCase() : "Unknown";
 }
 
-function imageDimensions(bytes: Uint8Array, contentType: string): {
+export function imageDimensions(bytes: Uint8Array, contentType: string): {
   width: number;
   height: number;
   type: string;
 } {
   const type = contentType.split(";")[0]?.toLowerCase() ?? "";
   try {
-    if (bytes.length > 24 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) {
+    if (bytes.length >= 24 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) {
       const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
       return { width: view.getUint32(16), height: view.getUint32(20), type: "PNG" };
     }
-    if (bytes.length > 10 && bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46) {
+    if (bytes.length >= 10 && bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46) {
       return {
         width: bytes[6] | (bytes[7] << 8),
         height: bytes[8] | (bytes[9] << 8),

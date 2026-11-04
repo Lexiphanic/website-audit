@@ -54,8 +54,7 @@ async function mapLimit<T, R>(
   return results;
 }
 
-function looksLikeHtml(body: string, contentType: string): boolean {
-  const prefix = body.slice(0, 300).toLowerCase();
+function looksLikeHtml(body: string, contentType: string): boolean {  const prefix = body.slice(0, 300).toLowerCase();
   return (
     contentType.includes("text/html") ||
     prefix.includes("<!doctype html") ||
@@ -242,6 +241,11 @@ function validJson(body: string): boolean {
   }
 }
 
+/** A file is present only when it is a real 2xx response, not a themed 404. */
+export function isPresentFile(entry: FileEntryFact | undefined): boolean {
+  return Boolean(entry && entry.status >= 200 && entry.status < 300 && !entry.soft404);
+}
+
 /** Fetch robots, sitemaps and the well-known set, and parse what matters. */
 export async function collectFiles(baseUrl: string, html: HtmlFacts | null): Promise<FilesFacts> {
   const base = new URL(baseUrl);
@@ -290,13 +294,10 @@ export async function collectFiles(baseUrl: string, html: HtmlFacts | null): Pro
 
   const get = (path: string): RawFile | undefined => {
     const raw = byPath.get(path);
-    if (!raw || raw.entry.status < 200 || raw.entry.status >= 300 || raw.entry.soft404) return undefined;
+    if (!raw || !isPresentFile(raw.entry)) return undefined;
     return raw;
   };
-  const ok = (path: string) => {
-    const entry = entries[path];
-    return Boolean(entry && entry.status >= 200 && entry.status < 300 && !entry.soft404);
-  };
+  const ok = (path: string) => isPresentFile(entries[path]);
 
   const robotsRaw = get("/robots.txt");
   const robots = robotsRaw

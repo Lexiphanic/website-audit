@@ -5,6 +5,7 @@
 ## Main pages
 
 - [Audit a site](https://audit.lexiphanic.co.uk/): run a free audit and read what is checked.
+- [Methodology](https://audit.lexiphanic.co.uk/methodology): every check, weight and grade band.
 - [Privacy note](https://audit.lexiphanic.co.uk/privacy): what the tool stores and what it does not.
 - [Lexiphanic](https://www.lexiphanic.co.uk/): the main studio site.
 - [Pricing](https://www.lexiphanic.co.uk/pricing): setup and monthly pricing.

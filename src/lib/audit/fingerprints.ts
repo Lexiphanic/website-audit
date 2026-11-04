@@ -142,7 +142,7 @@ const analytics: Rule[] = [
 ];
 
 const consent: Rule[] = [
-  { name: "OneTrust", category: "Consent", patterns: [/onetrust/i, /optanon/i], confidence: "high" },
+  { name: "OneTrust", category: "Consent", patterns: [/onetrust/i, /optanon/i, /cookielaw\.org/i], confidence: "high" },
   { name: "Cookiebot", category: "Consent", patterns: [/cookiebot/i], confidence: "high" },
   { name: "CookieYes", category: "Consent", patterns: [/cookieyes/i], confidence: "high" },
   { name: "Osano", category: "Consent", patterns: [/osano/i], confidence: "high" },

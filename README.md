@@ -15,6 +15,7 @@ be saved as a PDF from the browser.
 | URL | Shows |
 | --- | --- |
 | `/` | The public landing page and audit form. |
+| `/methodology` | Every check, weight, grade band and limitation. |
 | `/reports/{domain}` | The latest report for that domain. |
 | `/api/reports` | `POST` a scan (`url`, Turnstile token). |
 | `/api/reports/{domain}/status` | Small JSON status payload for polling. |
@@ -40,7 +41,8 @@ and public; the landing page is indexable. `robots.txt` does not disallow
 ```bash
 bun install
 bun run dev                 # astro dev (workerd + local D1)
-bun run build               # deploy build into dist/
+bun run build               # astro check + astro build into dist/
+bun run test                # bun test unit tests
 bun run check               # astro check (the type gate)
 bun run preview             # preview the built Worker
 
@@ -49,7 +51,7 @@ bun run db:migrate:remote   # apply the schema to the deployed D1
 bunx wrangler types         # regenerate worker-configuration.d.ts
 ```
 
-There is no test or lint script. Verify with `bun run check` and `bun run build`.
+There is no lint script. Verify with `bun run check`, `bun run test` and `bun run build`.
 
 ## Local development
 

@@ -51,7 +51,7 @@ const path = `/reports/${domain}`;
     </main>
   </BaseLayout>
 ) : (
-  <BaseLayout title={`${domain} — website migration audit`} description={payload.summary.headline} path={path} noindex>
+  <BaseLayout title={`${domain} — ${payload.meta.grade} (${payload.meta.score}/100) migration audit`} description={`${domain} scored ${payload.meta.grade} (${payload.meta.score}/100) on the Lexiphanic migration audit. ${payload.summary.headline}`} path={path} noindex>
     <main id="main" class="pt-[clamp(1.5rem,3vw,2.5rem)]">
       <ReportView payload={payload} />
     </main>

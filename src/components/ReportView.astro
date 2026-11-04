@@ -114,7 +114,7 @@ const psi = performance?.psi;
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.1 0l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1M14 11a5 5 0 0 0-7.1 0l-2 2A5 5 0 0 0 12 20.1l1.1-1.1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg>
           Copy link
         </button>
-        <a class="report-button report-button-ghost" href="/#audit">Run another</a>
+        <a class="report-button report-button-ghost" href={`/?url=${encodeURIComponent(payload.meta.domain)}#audit`}>Run a fresh audit</a>
       </div>
 
       <div class="mt-10 grid grid-cols-2 gap-3 min-[760px]:grid-cols-4">
@@ -127,6 +127,15 @@ const psi = performance?.psi;
   </header>
 
   <div class="mx-auto w-[min(1200px,100%-3rem)]">
+    <nav class="report-toc no-print" aria-label="Report sections">
+      <a href="#summary">Summary</a>
+      <a href="#transport">Transport</a>
+      <a href="#scorecard">Scorecard</a>
+      <a href="#findings">Findings</a>
+      <a href="#migration">Migration</a>
+      <a href="#appendix">Appendix</a>
+    </nav>
+
     <!-- Summary -->
     <section class="report-section" id="summary">
       <div class="report-section-head">
@@ -136,6 +145,12 @@ const psi = performance?.psi;
           This is a public-page audit. It is designed to show what a migration would inherit, not to
           score the site for its own sake. The findings below are the ones to discuss first.
         </p>
+        {payload.meta.coverage.checked < payload.meta.coverage.total && (
+          <p class="report-note">
+            {payload.meta.coverage.total - payload.meta.coverage.checked} scored checks did not run or did not
+            apply. They are shown as “Not checked” and excluded from the score.
+          </p>
+        )}
       </div>
 
       {top.length ? (
@@ -271,8 +286,19 @@ const psi = performance?.psi;
       </div>
 
       <div class="mt-8 grid gap-8">
+        <div class="report-filters no-print" data-filters>
+          <p class="text-[0.7rem] font-semibold tracking-[0.12em] text-violet-300 uppercase">Filter findings</p>
+          <div class="mt-2 flex flex-wrap gap-2">
+            <button type="button" class="report-filter is-active" data-filter="all" aria-pressed="true">All <span>{payload.checks.length}</span></button>
+            <button type="button" class="report-filter" data-filter="fail" aria-pressed="false">Failures <span>{payload.meta.counts.fail}</span></button>
+            <button type="button" class="report-filter" data-filter="warn" aria-pressed="false">Warnings <span>{payload.meta.counts.warn}</span></button>
+            <button type="button" class="report-filter" data-filter="pass" aria-pressed="false">Passes <span>{payload.meta.counts.pass}</span></button>
+            <button type="button" class="report-filter" data-filter="info" aria-pressed="false">Info <span>{payload.meta.counts.info}</span></button>
+          </div>
+        </div>
+
         {grouped.map((category) => (
-          <section class="report-category" id={`category-${category.key}`}>
+          <section class="report-category" id={`category-${category.key}`} data-category>
             <div class="flex flex-wrap items-end justify-between gap-3 border-b border-line pb-3">
               <div>
                 <h3 class="font-display text-[1.25rem] font-semibold text-cream">{category.label}</h3>
@@ -286,7 +312,7 @@ const psi = performance?.psi;
                 const def = definitionFor(check.key);
                 const notable = check.status === "fail" || check.status === "warn";
                 return (
-                  <details class={`report-check ${check.status === "pass" ? "is-pass" : ""}`} open={notable}>
+                  <details class={`report-check ${check.status === "pass" ? "is-pass" : ""}`} open={notable} data-status={check.status}>
                     <summary>
                       <span class={`badge ${pill(check.status)} shrink-0`}>{label(check.status)}</span>
                       <span class="report-check-title">{def.label}</span>
@@ -535,7 +561,30 @@ const psi = performance?.psi;
     if (window.location.search.includes("print=1")) details.open = true;
   });
 
+  const filterButtons = document.querySelectorAll<HTMLButtonElement>("[data-filter]");
+  const rows = () => Array.from(document.querySelectorAll<HTMLElement>(".report-check"));
+  const sections = () => Array.from(document.querySelectorAll<HTMLElement>("[data-category]"));
+
+  const applyFilter = (filter: string) => {
+    for (const row of rows()) {
+      row.hidden = filter !== "all" && row.dataset.status !== filter;
+    }
+    for (const section of sections()) {
+      section.hidden = !Array.from(section.querySelectorAll<HTMLElement>(".report-check")).some((row) => !row.hidden);
+    }
+    for (const button of filterButtons) {
+      const active = button.dataset.filter === filter;
+      button.classList.toggle("is-active", active);
+      button.setAttribute("aria-pressed", String(active));
+    }
+  };
+
+  for (const button of filterButtons) {
+    button.addEventListener("click", () => applyFilter(button.dataset.filter ?? "all"));
+  }
+
   window.addEventListener("beforeprint", () => {
+    applyFilter("all");
     document.querySelectorAll<HTMLDetailsElement>("details").forEach((details) => {
       details.open = true;
     });
