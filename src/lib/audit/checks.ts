@@ -42,6 +42,16 @@ function hostOf(value: string): string {
   }
 }
 
+function displayLocation(value: string): string {
+  try {
+    const url = new URL(value);
+    url.searchParams.delete("_audit");
+    return url.href;
+  } catch {
+    return value;
+  }
+}
+
 function certDate(value: string): string {
   const date = new Date(value);
   return Number.isNaN(date.valueOf())
@@ -109,13 +119,14 @@ export function transportChecks(facts: AuditFacts): CheckResult[] {
   const httpRedirect = (key: string, probe: typeof httpApex, label: string): CheckResult => {
     const first = probe.hops[0];
     if (!first) return warn(key, `${label} could not be tested`);
+    const location = displayLocation(first.location);
     if (first.status === 301 || first.status === 308) {
       return first.location.startsWith("https://")
-        ? pass(key, `${first.status} to ${first.location}`)
+        ? pass(key, `${first.status} to ${location}`)
         : fail(key, `${first.status} but not to HTTPS`);
     }
     if (first.status >= 300 && first.status < 400) {
-      return warn(key, `${first.status} to ${first.location}; use 301 or 308`);
+      return warn(key, `${first.status} to ${location}; use 301 or 308`);
     }
     if (first.status === 200) return fail(key, "HTTP served content without redirecting");
     if (first.status === 0) return warn(key, `HTTP could not be reached (${probe.error ?? "no response"})`);

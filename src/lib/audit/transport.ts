@@ -1,6 +1,6 @@
 import { followRedirects, fetchText } from "./fetch";
 import { certificateFromCrt, startLabs, tlsFromLabs } from "./tls";
-import type { DnsFacts, HstsInfo, TransportFacts } from "./types";
+import type { DnsFacts, HstsInfo, RedirectProbe, TransportFacts } from "./types";
 
 function parseHsts(raw: string): HstsInfo {
   const value = raw ?? "";
@@ -32,6 +32,31 @@ async function preloadStatus(domain: string): Promise<string | null> {
   }
 }
 
+/**
+ * A cached 200 can hide an HTTP-to-HTTPS redirect that was added after the
+ * response entered Cloudflare's cache. Re-probe with a unique query so the
+ * check reflects the current edge behaviour.
+ */
+async function refreshCachedHttpProbe(
+  probe: RedirectProbe,
+  url: string,
+): Promise<RedirectProbe> {
+  const first = probe.hops[0];
+  const cached = (probe.firstHeaders["cf-cache-status"] ?? "").toLowerCase() === "hit";
+  if (!first || first.status !== 200 || !cached) return probe;
+
+  try {
+    const fresh = await followRedirects(
+      `${url}${url.includes("?") ? "&" : "?"}_audit=${Date.now().toString(36)}`,
+      { maxHops: 8 },
+    );
+    const freshFirst = fresh.hops[0];
+    return freshFirst && freshFirst.status !== 200 ? fresh : probe;
+  } catch {
+    return probe;
+  }
+}
+
 /** Collect the redirect matrix, TLS probes, HSTS and transport headers. */
 export async function collectTransport(
   domain: string,
@@ -41,7 +66,7 @@ export async function collectTransport(
   const wwwHost = `www.${domain}`;
   const www = `https://${wwwHost}/`;
 
-  const [httpApex, httpsApex, httpWww, httpsWww, pathProbe, indexProbe, notFoundProbe] = await Promise.all([
+  const [rawHttpApex, httpsApex, rawHttpWww, httpsWww, pathProbe, indexProbe, notFoundProbe] = await Promise.all([
     followRedirects(`http://${domain}/`, { maxHops: 8 }),
     followRedirects(apex, { maxHops: 8, hashBody: true }),
     followRedirects(`http://${wwwHost}/`, { maxHops: 8 }),
@@ -49,6 +74,11 @@ export async function collectTransport(
     followRedirects(`http://${domain}/lexiphanic-audit?x=1`, { maxHops: 8 }),
     followRedirects(`https://${domain}/index.html`, { maxHops: 8, hashBody: true }),
     followRedirects(`https://${domain}/lexiphanic-audit-${Date.now().toString(36)}`, { maxHops: 8 }),
+  ]);
+
+  const [httpApex, httpWww] = await Promise.all([
+    refreshCachedHttpProbe(rawHttpApex, `http://${domain}/`),
+    refreshCachedHttpProbe(rawHttpWww, `http://${wwwHost}/`),
   ]);
 
   const wwwReachable = httpsWww.hops.length > 0;
