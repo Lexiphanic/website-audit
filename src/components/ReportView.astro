@@ -257,7 +257,20 @@ const psi = performance?.psi;
               <span class="text-[0.9rem] font-semibold text-cream">{category.score ?? "—"}{category.score === null ? "" : "/100"}</span>
             </div>
             <div class="mt-3 h-2 overflow-hidden rounded-full bg-[rgba(196,181,253,0.12)]">
-              <div class="h-full rounded-full bg-[linear-gradient(90deg,var(--color-violet-400),var(--color-violet-600))]" style={`width:${category.score ?? 0}%`}></div>
+              <svg
+                class="h-full w-full text-violet-400"
+                viewBox="0 0 100 100"
+                preserveAspectRatio="none"
+                aria-hidden="true"
+              >
+                <rect
+                  x="0"
+                  y="0"
+                  width={category.score ?? 0}
+                  height="100"
+                  fill="currentColor"
+                />
+              </svg>
             </div>
             <p class="mt-2 text-[0.76rem] text-muted">
               {category.passed} passed · {category.warnings} warnings · {category.failed} failed · {category.notChecked} not checked · weight {category.weight}%
