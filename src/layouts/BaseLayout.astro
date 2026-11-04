@@ -19,14 +19,11 @@ const { title, description, path = "/", noindex = false, type, image, bodyClass 
 ---
 
 <!doctype html>
-<html lang="en-GB" class="no-js">
+<html lang="en-GB">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <BaseHead title={title} description={description} path={path} noindex={noindex} type={type} image={image} />
-
-    <!-- External so the CSP can forbid inline scripts. -->
-    <script is:inline src="/js/no-js.js"></script>
   </head>
   <body class={bodyClass}>
     <a class="skip-link" href="#main">Skip to content</a>
