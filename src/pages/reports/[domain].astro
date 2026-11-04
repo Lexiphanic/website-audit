@@ -2,6 +2,7 @@
 import BaseLayout from "../../layouts/BaseLayout.astro";
 import ReportView from "../../components/ReportView.astro";
 import ReportProgress from "../../components/ReportProgress.astro";
+import { headlineForScore } from "../../lib/audit/score";
 import { loadReportPage } from "../../lib/report-page";
 
 export const prerender = false;
@@ -51,7 +52,7 @@ const path = `/reports/${domain}`;
     </main>
   </BaseLayout>
 ) : (
-  <BaseLayout title={`${domain} — ${payload.meta.grade} (${payload.meta.score}/100) website audit`} description={`${domain} scored ${payload.meta.grade} (${payload.meta.score}/100) on the Lexiphanic website audit. ${payload.summary.headline}`} path={path} noindex>
+  <BaseLayout title={`${domain} — ${payload.meta.grade} (${payload.meta.score}/100) website audit`} description={`${domain} scored ${payload.meta.grade} (${payload.meta.score}/100) on the Lexiphanic website audit. ${headlineForScore(payload.meta.score)}`} path={path} noindex>
     <main id="main" class="pt-[clamp(1.5rem,3vw,2.5rem)]">
       <ReportView payload={payload} />
     </main>
