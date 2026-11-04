@@ -257,14 +257,16 @@ export function transportChecks(facts: AuditFacts): CheckResult[] {
       ? fail("hsts-preload", "No HSTS header")
       : hsts.preload
         ? pass("hsts-preload", "preload is requested in the header")
-        : warn("hsts-preload", "preload is not requested"),
+        : info("hsts-preload", "Preload is not requested (optional)"),
   );
   results.push(
-    t.hsts.preloadStatus === null
-      ? skip("hsts-preload-list", "Preload list status could not be checked")
-      : t.hsts.preloadStatus === "preloaded"
-        ? pass("hsts-preload-list", "Listed as preloaded")
-        : warn("hsts-preload-list", `Preload list status: ${t.hsts.preloadStatus}`),
+    !hsts.present || !hsts.preload
+      ? info("hsts-preload-list", "Preload is not requested")
+      : t.hsts.preloadStatus === null
+        ? skip("hsts-preload-list", "Preload list status could not be checked")
+        : t.hsts.preloadStatus === "preloaded"
+          ? pass("hsts-preload-list", "Listed as preloaded")
+          : warn("hsts-preload-list", `Preload list status: ${t.hsts.preloadStatus}`),
   );
 
   results.push(t.ipv6 ? pass("ipv6", "AAAA record published") : warn("ipv6", "No AAAA record"));
@@ -853,7 +855,7 @@ export function securityChecks(facts: AuditFacts): CheckResult[] {
         ? pass("csp-directives", "default-src, object-src, base-uri and frame-ancestors present")
         : warn("csp-directives", `${directives.length} of 4 core directives present`),
   );
-  results.push(!s.csp.present ? skip("csp-report", "No CSP") : s.csp.reportUri ? pass("csp-report", "Reporting endpoint configured") : warn("csp-report", "No report-uri or report-to"));
+  results.push(!s.csp.present ? skip("csp-report", "No CSP") : s.csp.reportUri ? pass("csp-report", "Reporting endpoint configured") : info("csp-report", "No report-uri or report-to (optional)"));
 
   results.push(/nosniff/i.test(s.xcto) ? pass("xcto", s.xcto) : fail("xcto", s.xcto || "No X-Content-Type-Options"));
   results.push(
