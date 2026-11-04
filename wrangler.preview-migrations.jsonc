@@ -1,0 +1,11 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "d1_databases": [
+    {
+      "binding": "PREVIEW_DB",
+      "database_name": "audit-lexiphanic-co-uk-preview",
+      "database_id": "21fd7b2e-2ec3-4f23-9ff8-8581fce1389a",
+      "migrations_dir": "migrations"
+    }
+  ]
+}

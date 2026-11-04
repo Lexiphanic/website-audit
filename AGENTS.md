@@ -106,6 +106,12 @@ the noindex. The landing page is indexable.
 - **`astro dev` supports the Workflow binding.** It is a real local instance.
   If that changes, use `wrangler dev` for end-to-end tests and keep `astro dev`
   for UI work.
+- **Previews do not inherit production settings.** `wrangler.jsonc` has a
+  `previews` block with a separate D1 database, preview Turnstile keys and a
+  separate rate-limit namespace. Previews run audits inline
+  (`src/lib/workflow/inline.ts`) because a preview cannot bind to the production
+  Workflow with a preview database. Apply
+  `wrangler.preview-migrations.jsonc` before deploying a preview.
 - **Print CSS is the PDF.** The browser's print engine does not support CSS page
   numbers; do not promise them. `beforeprint` opens all `<details>`; pass rows
   are hidden in print so the PDF stays readable.

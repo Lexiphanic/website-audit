@@ -51,6 +51,34 @@
     "binding": "ASSETS",
     "not_found_handling": "none"
   },
+  // Workers Previews do not inherit production settings. The preview uses a
+  // separate D1 database and Turnstile test keys, and runs the audit inline
+  // instead of through the production Workflow.
+  "previews": {
+    "vars": {
+      "APP_ENV": "preview",
+      "TURNSTILE_SITE_KEY": "1x00000000000000000000AA",
+      "TURNSTILE_HOSTNAMES": "audit.lexiphanic.co.uk"
+    },
+    "d1_databases": [
+      {
+        "binding": "DB",
+        "database_name": "audit-lexiphanic-co-uk-preview",
+        "database_id": "21fd7b2e-2ec3-4f23-9ff8-8581fce1389a",
+        "migrations_dir": "migrations"
+      }
+    ],
+    "ratelimits": [
+      {
+        "name": "SCAN_RATE",
+        "namespace_id": "741004",
+        "simple": {
+          "limit": 5,
+          "period": 60
+        }
+      }
+    ]
+  },
   "vars": {
     "APP_ENV": "production",
     // Create a Turnstile widget for audit.lexiphanic.co.uk and paste its site

@@ -121,6 +121,25 @@ Build command: `bun run build`
 Deploy command: `bunx wrangler deploy`
 Output directory: `dist`
 
+### Feature previews
+
+Worker Previews do not inherit production settings. `wrangler.jsonc` therefore
+has a `previews` block with a separate D1 database, preview Turnstile test keys
+and a separate rate-limit namespace. The preview Worker runs audits inline
+(`src/lib/workflow/inline.ts`) instead of binding to the production Workflow.
+
+The preview database is `audit-lexiphanic-co-uk-preview`, configured in
+`wrangler.preview-migrations.jsonc`. Apply migrations before deploying a preview:
+
+```bash
+bunx wrangler d1 migrations apply PREVIEW_DB --remote --config wrangler.preview-migrations.jsonc
+bunx wrangler preview --name <branch-name>
+```
+
+Preview URLs look like `<preview-name>.audit.lexiphanic.co.uk` and
+`<deployment-id>.audit.lexiphanic.co.uk`. They are for review; they do not write
+to production D1.
+
 ### First deploy checklist
 
 1. Create the D1 database:

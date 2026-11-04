@@ -2,6 +2,7 @@ import type { APIRoute } from "astro";
 import { env } from "cloudflare:workers";
 import { normalizeTarget, reportPath } from "../../../lib/audit/normalize";
 import { hasFreshReport, queueReport, failReport, setWorkflowId } from "../../../lib/db";
+import { runAuditInline } from "../../../lib/workflow/inline";
 import { ukDate } from "../../../lib/util";
 import { clientIp, verifyTurnstile } from "../../../lib/turnstile";
 
@@ -92,6 +93,17 @@ export const POST: APIRoute = async ({ request, redirect }) => {
       date,
       url: `https://${target.domain}/`,
     });
+
+    if (String(env.APP_ENV) === "preview") {
+      await runAuditInline(env, {
+        domain: target.domain,
+        url: `https://${target.domain}/`,
+        reportDate: date,
+      });
+      return wantsJson
+        ? Response.json({ domain: target.domain, reportUrl }, { status: 201 })
+        : redirect(reportUrl, 303);
+    }
 
     const instance = await env.AUDIT_WORKFLOW.create({
       params: {
