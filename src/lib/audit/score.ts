@@ -105,7 +105,7 @@ export function scoreChecks(results: CheckResult[]): {
   };
 }
 
-function headlineFor(score: number | null): string {
+export function headlineForScore(score: number | null): string {
   if (score === null) return "The audit completed with limited coverage.";
   if (score >= 90) return "The site is in good shape.";
   if (score >= 80) return "A solid site with a few things worth fixing.";
@@ -176,7 +176,7 @@ export function buildReport(
       counts: score.counts,
     },
     summary: {
-      headline: headlineFor(score.overall),
+      headline: headlineForScore(score.overall),
       topFindings,
     },
     categories: score.categories,

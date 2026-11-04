@@ -1,6 +1,7 @@
 ---
 import { CATEGORIES, type CheckResult, type ReportPayload } from "../lib/audit/types";
 import { definitionFor } from "../lib/audit/registry";
+import { headlineForScore } from "../lib/audit/score";
 import { formatDate, ukDateTime } from "../lib/util";
 import { site } from "../lib/site";
 
@@ -58,6 +59,7 @@ const hsts = transport?.hsts;
 const score = payload.meta.score;
 const grade = payload.meta.grade;
 const top = payload.summary.topFindings;
+const headline = headlineForScore(score);
 const psi = performance?.psi;
 ---
 
@@ -131,7 +133,7 @@ const psi = performance?.psi;
     <section class="report-section" id="summary">
       <div class="report-section-head">
         <p class="eyebrow">Executive summary</p>
-        <h2>{payload.summary.headline}</h2>
+        <h2>{headline}</h2>
         <p>
           This is a public-page snapshot. It shows what the site is doing today, not what it could be.
           The findings below are the ones to discuss first.
