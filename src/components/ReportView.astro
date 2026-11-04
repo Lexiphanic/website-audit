@@ -1,7 +1,7 @@
 ---
 import { CATEGORIES, type CheckResult, type ReportPayload } from "../lib/audit/types";
 import { definitionFor } from "../lib/audit/registry";
-import { headlineForScore } from "../lib/audit/score";
+import { ENGINE_VERSION, headlineForScore } from "../lib/audit/score";
 import { formatDate, ukDateTime } from "../lib/util";
 import { site } from "../lib/site";
 
@@ -16,6 +16,22 @@ const dns = facts.dns;
 const files = facts.files;
 const performance = facts.performance;
 const migration = facts.migration;
+const thirdParties = files?.thirdParties ?? null;
+const engineVersion = payload.meta.engineVersion || "unknown";
+const staleEngine = engineVersion !== ENGINE_VERSION;
+
+function categoryLabel(value: string): string {
+  return value
+    .split("-")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function privacyBadge(value: string): string {
+  if (value === "high") return "badge-warn";
+  if (value === "medium") return "badge-info";
+  return "badge-muted";
+}
 
 const grouped = CATEGORIES.map((category) => ({
   ...category,
@@ -435,6 +451,94 @@ const psi = performance?.psi;
       </div>
     </section>
 
+    <!-- Third parties -->
+    <section class="report-section" id="third-parties">
+      <div class="report-section-head">
+        <p class="eyebrow">Third parties</p>
+        <h2>Requests, trackers and hosting.</h2>
+        <p>Informational only. These findings do not affect the score.</p>
+      </div>
+
+      <div class="mt-8 grid grid-cols-1 gap-4 min-[900px]:grid-cols-3">
+        <div class="report-panel">
+          <h3 class="report-panel-title">Edge / CDN</h3>
+          <p class="mt-2 text-[1rem] font-medium text-cream">{thirdParties?.edge?.name ?? "Not identified"}</p>
+          <p class="mt-1 text-[0.78rem] text-muted">
+            {thirdParties?.edge ? `${thirdParties.edge.confidence} confidence` : "No CDN signature in the response headers"}
+          </p>
+          {thirdParties?.edge?.evidence.length ? (
+            <p class="mono mt-2 text-[0.72rem] leading-relaxed text-muted">{thirdParties.edge.evidence.join(" · ")}</p>
+          ) : null}
+        </div>
+
+        <div class="report-panel">
+          <h3 class="report-panel-title">DNS provider</h3>
+          <p class="mt-2 text-[1rem] font-medium text-cream">{thirdParties?.dns?.name ?? "Not identified"}</p>
+          <p class="mt-1 text-[0.78rem] text-muted">
+            {thirdParties?.dns ? `${thirdParties.dns.confidence} confidence` : "No known nameserver fingerprint"}
+          </p>
+          {thirdParties?.dns?.evidence.length ? (
+            <p class="mono mt-2 text-[0.72rem] leading-relaxed text-muted">{thirdParties.dns.evidence.join(" · ")}</p>
+          ) : null}
+        </div>
+
+        <div class="report-panel">
+          <h3 class="report-panel-title">Consent tool</h3>
+          <p class="mt-2 text-[1rem] font-medium text-cream">
+            {thirdParties?.consent.length ? thirdParties.consent.join(", ") : "None detected"}
+          </p>
+          <p class="mt-1 text-[0.78rem] leading-relaxed text-muted">
+            A static scan can see the consent loader, but it cannot prove that every tag waits for consent.
+          </p>
+        </div>
+      </div>
+
+      <div class="report-panel mt-5">
+        <h3 class="report-panel-title">Tracking and privacy</h3>
+        {thirdParties?.providers.length ? (
+          <div class="table-scroll mt-3">
+            <table class="report-table report-table-compact">
+              <thead><tr><th>Provider</th><th>Type</th><th>Privacy</th><th>Evidence</th></tr></thead>
+              <tbody>
+                {thirdParties.providers.map((provider) => (
+                  <tr>
+                    <td>{provider.name}</td>
+                    <td class="text-muted">{categoryLabel(provider.category)}</td>
+                    <td><span class={`badge ${privacyBadge(provider.privacy)}`}>{provider.privacy}</span></td>
+                    <td class="mono text-muted">
+                      {provider.evidence[0]}
+                      {provider.evidence.length > 1 ? ` +${provider.evidence.length - 1}` : ""}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p class="mt-3 text-[0.86rem] leading-relaxed text-muted">No known tracking, consent, chat or embed providers were referenced in the sampled HTML.</p>
+        )}
+        <p class="mt-4 text-[0.78rem] leading-relaxed text-muted">
+          Detected from the homepage and up to five sitemap pages. Scripts are not executed, so tags injected at runtime by a tag manager, or sent server-side, may not appear.
+        </p>
+      </div>
+
+      <div class="report-panel mt-5">
+        <h3 class="report-panel-title">Third-party domains</h3>
+        {thirdParties?.domains.length ? (
+          <div class="mt-3 flex flex-wrap gap-2">
+            {thirdParties.domains.map((domain) => (
+              <span class="badge badge-muted">
+                {domain.host} · {domain.count}
+                {domain.categories.length ? ` · ${domain.categories.map(categoryLabel).join(", ")}` : ""}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <p class="mt-3 text-[0.86rem] leading-relaxed text-muted">No third-party hosts were referenced in the sampled HTML.</p>
+        )}
+      </div>
+    </section>
+
     <!-- CTA -->
     <section class="report-section report-cta" id="next">
       <div>
@@ -517,18 +621,23 @@ const psi = performance?.psi;
 
       <div class="report-panel mt-5">
         <h3 class="report-panel-title">Method and limits</h3>
+        {staleEngine ? (
+          <p class="mb-4 rounded-[10px] border border-line-strong bg-[rgba(124,58,237,0.08)] px-4 py-3 text-[0.84rem] leading-relaxed text-muted">
+            This report was generated by an older audit engine ({engineVersion}). Run a fresh audit to compare like for like.
+          </p>
+        ) : null}
         <div class="report-method">
           <p>
-            The audit is built from public HTTP responses, DNS-over-HTTPS records, the certificate served on
-            port 443, and the HTML of the homepage. It fetches a small sample of well-known files and sitemap
-            URLs. It does not log in, submit forms, crawl the whole site or test for vulnerabilities.
+            The audit is built from public HTTP responses, DNS-over-HTTPS records, the public certificate and
+            the HTML of the homepage. It fetches a small sample of well-known files and sitemap URLs. It does
+            not log in, submit forms, crawl the whole site or test for vulnerabilities.
           </p>
           <p>
-            The TLS certificate and protocol are measured with a real handshake from Cloudflare's network.
-            Legacy TLS 1.0/1.1 support may be reported as “not checked” where the runtime refuses the
-            handshake. HSTS preload list status comes from hstspreload.org; the header alone only requests
-            inclusion. PageSpeed Insights is optional and, when no key is configured, Lighthouse and field
-            Core Web Vitals are marked as not run.
+            DNS comes from Cloudflare DNS with Google Public DNS as a fallback; registration data from RDAP;
+            the certificate and TLS versions from Qualys SSL Labs, with crt.sh as a certificate fallback; HSTS
+            preload status from hstspreload.org. Legacy TLS 1.0/1.1 may show as “not checked” when SSL Labs
+            does not return protocol details. PageSpeed Insights is optional and, when no key is configured,
+            Lighthouse and field Core Web Vitals are marked as not run.
           </p>
           <p>
             Scores are weighted pass rates. A pass scores 1, a warning 0.5 and a failure 0. Informational,

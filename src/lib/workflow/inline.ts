@@ -8,7 +8,7 @@ import { collectPerformance } from "../audit/performance";
 import { collectMigration } from "../audit/migration";
 import { allChecks } from "../audit/checks";
 import { buildReport } from "../audit/score";
-import { pollLabs, tlsFromLabs } from "../audit/tls";
+import { detectDnsProvider } from "../audit/third-parties";
 import { completeReport, failReport, updateProgress } from "../db";
 import { asErrorMessage } from "../util";
 import type {
@@ -19,6 +19,7 @@ import type {
   MigrationFacts,
   PerformanceFacts,
   SecurityFacts,
+  ThirdPartyFacts,
   TransportFacts,
 } from "../audit/types";
 
@@ -26,7 +27,7 @@ const EMPTY_DNS: DnsFacts = {
   records: { a: [], aaaa: [], cname: [], ns: [], mx: [], txt: [], caa: [], dnskey: false, ds: false, ad: false, soa: "" },
   email: {
     spfRecords: [],
-    spf: { present: false, record: "", qualifier: "", lookupCount: 0 },
+    spf: { present: false, record: "", qualifier: "", lookupCount: 0, voidLookups: 0 },
     dmarc: { present: false, record: "", policy: "", subdomainPolicy: "", pct: null, rua: "", ruf: "" },
     dkimSelectors: [],
     bimi: false,
@@ -92,16 +93,19 @@ export async function runAuditInline(env: Env, params: InlineAuditParams): Promi
     const transport = await phase<TransportFacts | null>("transport", 25, () => collectTransport(domain, dns), () => null);
     facts.transport = transport;
 
-    const html = await phase<HtmlFacts | null>("content", 40, async () => {
-      const target = transport?.homepage.finalUrl || `https://${domain}/`;
+    const target = transport?.homepage.finalUrl || `https://${domain}/`;
+    const content = await phase<{ html: HtmlFacts; thirdParties: ThirdPartyFacts } | null>("content", 40, async () => {
       const response = await fetchText(target, { timeoutMs: 12_000, maxBytes: 512_000 });
       return collectHtml(response.body, target, response.status, response.headers);
     }, () => null);
+    const html = content?.html ?? null;
+    const homepageThirdParties = content?.thirdParties ?? null;
     facts.html = html;
 
     const files = await phase<FilesFacts | null>("files", 55, () =>
-      collectFiles(transport?.homepage.finalUrl || `https://${domain}/`, html), () => null);
+      collectFiles(target, html, homepageThirdParties), () => null);
     facts.files = files;
+    if (files) files.thirdParties.dns = detectDnsProvider(dns.records.ns);
 
     const security = await phase<SecurityFacts | null>("security", 70, async () => {
       if (!transport) throw new Error("Transport data is unavailable");
@@ -121,30 +125,8 @@ export async function runAuditInline(env: Env, params: InlineAuditParams): Promi
     }, () => null);
     facts.migration = migration;
 
-    if (transport?.tls.apex?.pending) {
-      await updateProgress(env, domain, "tls-grade", 92).catch(() => undefined);
-      let current = transport.tls.apex;
-      let tlsHost = domain;
-      try {
-        tlsHost = new URL(transport.homepage.finalUrl).hostname;
-      } catch {
-        // keep the apex
-      }
-      for (let attempt = 0; attempt < 2; attempt += 1) {
-        await new Promise((resolve) => setTimeout(resolve, 10_000));
-        try {
-          const summary = await pollLabs(tlsHost);
-          current = tlsFromLabs(summary, current.certificate);
-          if (summary.http2) transport.http2 = true;
-          if (!current.pending) break;
-        } catch (error) {
-          facts.errors.push({ phase: "tls-grade", message: asErrorMessage(error) });
-          break;
-        }
-      }
-      transport.tls.apex = current;
-      if (transport.wwwReachable) transport.tls.www = current;
-    }
+    // Do not sleep waiting for SSL Labs; the cached answer is already in
+    // transport and a later run picks up the grade when Labs has finished.
 
     const results = allChecks(facts);
     const payload = buildReport(facts, results, Date.now() - started);

@@ -219,7 +219,13 @@ export interface DnsRecords {
 
 export interface EmailAuthFacts {
   spfRecords: string[];
-  spf: { present: boolean; record: string; qualifier: string; lookupCount: number };
+  spf: {
+    present: boolean;
+    record: string;
+    qualifier: string;
+    lookupCount: number;
+    voidLookups: number;
+  };
   dmarc: {
     present: boolean;
     record: string;
@@ -327,6 +333,46 @@ export interface FileEntryFact {
   error?: string;
 }
 
+export type ThirdPartyCategory =
+  | "advertising"
+  | "analytics"
+  | "tag-manager"
+  | "session-replay"
+  | "consent"
+  | "social"
+  | "embedded"
+  | "functional";
+
+export type PrivacyLevel = "high" | "medium" | "low";
+
+export interface ThirdPartyProviderFact {
+  name: string;
+  category: ThirdPartyCategory;
+  privacy: PrivacyLevel;
+  evidence: string[];
+  source: "script" | "stylesheet" | "image" | "iframe" | "hint" | "inline";
+}
+
+export interface ThirdPartyDomainFact {
+  host: string;
+  count: number;
+  categories: ThirdPartyCategory[];
+}
+
+export interface EdgeFact {
+  name: string;
+  confidence: "high" | "medium" | "low";
+  evidence: string[];
+}
+
+export interface ThirdPartyFacts {
+  edge: EdgeFact | null;
+  dns: EdgeFact | null;
+  providers: ThirdPartyProviderFact[];
+  domains: ThirdPartyDomainFact[];
+  consent: string[];
+}
+
 export interface FilesFacts {
   entries: Record<string, FileEntryFact>;
   robots: {
@@ -397,6 +443,7 @@ export interface FilesFacts {
     brokenIcons: string[];
   };
   rootIcons: { favicon: boolean; appleTouch: boolean };
+  thirdParties: ThirdPartyFacts;
 }
 
 export interface SecurityFacts {

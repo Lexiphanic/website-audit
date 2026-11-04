@@ -1,6 +1,12 @@
 import { XMLParser } from "fast-xml-parser";
+import { parseHTML } from "linkedom";
 import { fetchFollowing, followRedirects } from "./fetch";
-import type { FileEntryFact, FilesFacts, HtmlFacts } from "./types";
+import {
+  detectThirdParties,
+  emptyThirdPartyFacts,
+  mergeThirdPartyFacts,
+} from "./third-parties";
+import type { FileEntryFact, FilesFacts, HtmlFacts, ThirdPartyFacts } from "./types";
 
 interface RawFile {
   entry: FileEntryFact;
@@ -209,6 +215,46 @@ async function sampleUrls(urls: string[]): Promise<FilesFacts["sitemaps"]["sampl
   });
 }
 
+const NON_HTML_EXTENSION =
+  /\.(?:jpe?g|png|gif|webp|avif|svg|ico|bmp|tiff?|pdf|zip|gz|tgz|7z|rar|mp4|m4v|mov|webm|mp3|ogg|wav|woff2?|ttf|otf|eot|css|js|mjs|json|xml|rss|atom|txt|csv|docx?|xlsx?|pptx?)$/i;
+
+function isHtmlUrl(url: string): boolean {
+  try {
+    return !NON_HTML_EXTENSION.test(new URL(url).pathname);
+  } catch {
+    return false;
+  }
+}
+
+/** Read a few sitemap pages for third-party resources; this is not a crawl. */
+async function sampleThirdPartyPages(urls: string[]): Promise<ThirdPartyFacts> {
+  const candidates = urls.filter(isHtmlUrl).slice(0, 5);
+  const sampled = await mapLimit(candidates, 2, async (url) => {
+    try {
+      const result = await fetchFollowing(url, { timeoutMs: 7000, maxBytes: 64_000 });
+      if (result.status !== 200 || !result.body) return null;
+      if (!/text\/html|application\/xhtml/i.test(result.contentType)) return null;
+      const { document } = parseHTML(result.body);
+      const resources = (selector: string, attribute: string) =>
+        Array.from(document.querySelectorAll(selector))
+          .map((element) => element.getAttribute(attribute) ?? "")
+          .filter(Boolean);
+      return detectThirdParties({
+        url,
+        htmlSource: result.body,
+        scripts: resources("script[src]", "src"),
+        stylesheets: resources('link[rel="stylesheet"][href]', "href"),
+        images: resources("img[src]", "src"),
+        iframes: resources("iframe[src]", "src"),
+        hints: resources('link[rel="preconnect"][href], link[rel="dns-prefetch"][href]', "href"),
+      });
+    } catch {
+      return null;
+    }
+  });
+  return mergeThirdPartyFacts(...sampled.filter((fact): fact is ThirdPartyFacts => fact !== null));
+}
+
 function markdownStats(body: string): {
   headings: number;
   links: number;
@@ -247,7 +293,11 @@ export function isPresentFile(entry: FileEntryFact | undefined): boolean {
 }
 
 /** Fetch robots, sitemaps and the well-known set, and parse what matters. */
-export async function collectFiles(baseUrl: string, html: HtmlFacts | null): Promise<FilesFacts> {
+export async function collectFiles(
+  baseUrl: string,
+  html: HtmlFacts | null,
+  initialThirdParties: ThirdPartyFacts | null = null,
+): Promise<FilesFacts> {
   const base = new URL(baseUrl);
   const fileUrl = (path: string) => new URL(path, base).href;
 
@@ -439,6 +489,11 @@ export async function collectFiles(baseUrl: string, html: HtmlFacts | null): Pro
     }
   }
 
+  const thirdParties = mergeThirdPartyFacts(
+    initialThirdParties,
+    uniqueUrls.length ? await sampleThirdPartyPages(uniqueUrls) : emptyThirdPartyFacts(),
+  );
+
   const baseHost = new URL(base).hostname;
   const homepage = uniqueUrls.some((url) => {
     try {
@@ -512,5 +567,6 @@ export async function collectFiles(baseUrl: string, html: HtmlFacts | null): Pro
       favicon: ok("/favicon.ico"),
       appleTouch: ok("/apple-touch-icon.png"),
     },
+    thirdParties,
   };
 }

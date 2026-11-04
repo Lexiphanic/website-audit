@@ -1,7 +1,7 @@
 import { CATEGORIES, type AuditFacts, type CategoryScore, type CheckResult, type ReportPayload } from "./types";
 import { CHECK_DEFINITIONS, definitionFor } from "./registry";
 
-const ENGINE_VERSION = "1.0.0";
+const ENGINE_VERSION = "1.1.0";
 const MAX_PAYLOAD_BYTES = 88_000;
 
 function gradeFor(score: number | null): string {
@@ -130,6 +130,12 @@ function trimFacts(facts: AuditFacts): AuditFacts {
   if (copy.files) {
     copy.files.sitemaps.urls = copy.files.sitemaps.urls.slice(0, 500);
     copy.files.sitemaps.sample = copy.files.sitemaps.sample.slice(0, 10);
+    if (copy.files.thirdParties) {
+      copy.files.thirdParties.providers = copy.files.thirdParties.providers
+        .slice(0, 20)
+        .map((provider) => ({ ...provider, evidence: provider.evidence.slice(0, 3) }));
+      copy.files.thirdParties.domains = copy.files.thirdParties.domains.slice(0, 20);
+    }
   }
   if (copy.performance) {
     copy.performance.brokenImages = copy.performance.brokenImages.slice(0, 8);
