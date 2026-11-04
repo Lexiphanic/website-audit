@@ -301,8 +301,11 @@ Edge's **Print → Save as PDF**; the in-page button calls `window.print()`.
   spoofed by a proxy. The performance check counts the same third-party hosts.
 - The compression check makes a second request with
   `Accept-Encoding: br, gzip, zstd` and reads only the headers. The HTML fetch
-  itself stays uncompressed so the parser sees text. Module scripts are deferred
-  by default and are not counted as render-blocking.
+  itself stays uncompressed so the parser sees text. Cloudflare may still
+  decompress the response and drop `content-encoding`, so the check falls back
+  to PageSpeed's `uses-text-compression` audit and is informational when
+  PageSpeed is not configured. Module scripts are deferred by default and are
+  not counted as render-blocking.
 - OCSP stapling is informational. Some CAs, including Google Trust Services,
   publish CRLs but no OCSP responder, so there is nothing to staple even though
   the certificate is valid.

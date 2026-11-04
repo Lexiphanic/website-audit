@@ -134,8 +134,9 @@ the noindex. The landing page is indexable.
 - **Not every warning is a site defect.** Module scripts are deferred, so they
   are not render-blocking. Some CAs (Google Trust Services) publish CRLs but no
   OCSP responder, so OCSP stapling is informational. Compression is probed with
-  a separate `Accept-Encoding` request; the HTML fetch itself stays uncompressed
-  so the parser sees text.
+  a separate `Accept-Encoding` request; Cloudflare may still decompress the
+  response and drop the header, so the check falls back to PageSpeed. The HTML
+  fetch itself stays uncompressed so the parser sees text.
 - **Public scan safety.** Keep the SSRF guard (`src/lib/audit/ssrf.ts`) on every
   request and redirect. Do not add features that scan private hosts, log in,
   submit forms or test for vulnerabilities.
