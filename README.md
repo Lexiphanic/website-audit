@@ -133,8 +133,12 @@ The preview database is `audit-lexiphanic-co-uk-preview`, configured in
 
 ```bash
 bunx wrangler d1 migrations apply PREVIEW_DB --remote --config wrangler.preview-migrations.jsonc
+bunx wrangler preview base-config secret put TURNSTILE_SECRET # use the Turnstile test secret
 bunx wrangler preview --name <branch-name>
 ```
+
+Existing previews need their secret set directly:
+`bunx wrangler preview secret put TURNSTILE_SECRET --name <branch-name>`.
 
 Preview URLs look like `<preview-name>.audit.lexiphanic.co.uk` and
 `<deployment-id>.audit.lexiphanic.co.uk`. They are for review; they do not write
