@@ -8,8 +8,9 @@ server-rendered Astro app on a Cloudflare Worker with D1 and a
 Cloudflare Workflow. It is not the operations platform (`client-launch-lexiphanic-co-uk`)
 and not a static marketing site; it shares their branding and Astro conventions.
 
-The repository is named `client-audit-lexiphanic-co-uk`, matching the Worker in
-`wrangler.jsonc`.
+The GitHub repository is `website-audit`. The Worker keeps the name
+`client-audit-lexiphanic-co-uk` in `wrangler.jsonc`, along with its D1 database
+and custom domain; only the repository was renamed.
 
 ## Commands
 

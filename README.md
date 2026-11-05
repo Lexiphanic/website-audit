@@ -1,4 +1,4 @@
-# Lexiphanic Audit — client-audit-lexiphanic-co-uk
+# Lexiphanic Audit — website-audit
 
 **Lexiphanic Audit** is a public website audit at
 `audit.lexiphanic.co.uk`. Enter a domain and get an evidence-based snapshot of
@@ -120,8 +120,10 @@ cannot start the same domain at once.
 ## Deployment
 
 Deployed as a Cloudflare Worker with static assets through **Workers Builds**.
-Never run `wrangler deploy` locally: a hand-made deploy publishes a version that
-matches no commit.
+The GitHub repository is `website-audit`; the Worker keeps the name
+`client-audit-lexiphanic-co-uk` so its D1 database, Workflow and custom domain
+stay attached. Never run `wrangler deploy` locally: a hand-made deploy publishes
+a version that matches no commit.
 
 Build command: `bun run build`
 Deploy command: `bunx wrangler deploy`
