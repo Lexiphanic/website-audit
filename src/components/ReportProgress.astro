@@ -3,33 +3,50 @@ interface Props {
   domain: string;
   status: string;
   phase: string;
-  progress: number;
   error?: string | null;
 }
 
-const { domain, status, phase, progress, error } = Astro.props;
+const { domain, status, phase, error } = Astro.props;
 
-const steps = [
-  ["dns", "DNS and domain"],
-  ["transport", "Transport and TLS"],
-  ["content", "Page and metadata"],
-  ["files", "Crawl and well-known files"],
-  ["security", "Security headers and email"],
-  ["performance", "Performance"],
-  ["migration", "Site profile"],
-  ["score", "Scoring"],
-  ["persist", "Saving the report"],
+const stages = [
+  "DNS and domain",
+  "Transport and TLS",
+  "Page and metadata",
+  "Crawl and well-known files",
+  "Security headers and email",
+  "Performance",
+  "Site profile",
+  "Scoring",
 ];
 
-const currentIndex = Math.max(
-  steps.findIndex(([key]) => key === phase),
-  0,
+const phaseKeys = [
+  "dns",
+  "transport",
+  "content",
+  "files",
+  "security",
+  "performance",
+  "migration",
+  "score",
+  "persist",
+];
+const initialStage = Math.min(
+  Math.max(phaseKeys.indexOf(phase), 0),
+  stages.length - 1,
 );
+
 const failed = status === "failed";
 const statusUrl = `/api/reports/${domain}/status`;
 ---
 
-<section class="mx-auto w-[min(900px,100%-3rem)] pt-[clamp(7rem,12vw,10rem)] pb-24" data-audit-status data-url={statusUrl}>
+<section
+  class="mx-auto w-[min(900px,100%-3rem)] pt-[clamp(7rem,12vw,10rem)] pb-24"
+  data-audit-status
+  data-url={statusUrl}
+  data-status={status}
+  data-stages={JSON.stringify(stages)}
+  data-initial-stage={initialStage}
+>
   <p class="eyebrow">Website audit</p>
   <h1 class="mt-4 font-display text-[clamp(2rem,5vw,3.4rem)] leading-[1.05] font-semibold tracking-[-0.02em] text-cream">
     {domain}
@@ -43,40 +60,37 @@ const statusUrl = `/api/reports/${domain}/status`;
       <span class="text-[0.72rem] font-semibold tracking-[0.14em] text-violet-300 uppercase">
         {failed ? "Failed" : "In progress"}
       </span>
-      <span class="text-[0.8rem] text-muted" data-progress-label>{progress}%</span>
-    </div>
-    <div class="mt-3 h-2 overflow-hidden rounded-full bg-[rgba(196,181,253,0.12)]">
-      <svg
-        class="h-full w-full text-violet-400 transition-[width] duration-500"
-        viewBox="0 0 100 100"
-        preserveAspectRatio="none"
-        aria-hidden="true"
-      >
-        <rect
-          x="0"
-          y="0"
-          width={failed ? 100 : progress}
-          height="100"
-          fill="currentColor"
-          data-progress-bar
-        />
-      </svg>
+      <span class="text-[0.75rem] text-muted">{failed ? "Stopped" : "Working"}</span>
     </div>
 
     {failed ? (
-      <div class="mt-6 rounded-xl border border-[rgba(251,113,133,0.35)] bg-[rgba(251,113,133,0.08)] p-4">
+      <div class="mt-5 rounded-xl border border-[rgba(251,113,133,0.35)] bg-[rgba(251,113,133,0.08)] p-4">
         <p class="text-[0.88rem] text-bad-400">{error || "The audit failed before it could finish."}</p>
-        <a class="mt-3 inline-flex text-[0.84rem] text-violet-300 underline underline-offset-4" href={`/?url=${encodeURIComponent(domain)}#audit`}>Try again</a>
+        <a
+          class="mt-3 inline-flex text-[0.84rem] text-violet-300 underline underline-offset-4"
+          href={`/?url=${encodeURIComponent(domain)}#audit`}
+        >
+          Try again
+        </a>
       </div>
     ) : (
-      <ol class="mt-6 grid gap-2">
-        {steps.map(([, label], index) => (
-          <li class={`flex items-center justify-between gap-4 rounded-lg border px-3 py-2 text-[0.85rem] ${index === currentIndex ? "border-violet-500/50 bg-violet-600/10 text-cream" : index < currentIndex ? "border-line text-muted" : "border-transparent text-muted/60"}`}>
-            <span>{label}</span>
-            <span class="text-[0.7rem]">{index < currentIndex || status === "complete" ? "Done" : index === currentIndex ? "Running" : "Waiting"}</span>
-          </li>
-        ))}
-      </ol>
+      <>
+        <div
+          class="audit-progress mt-4"
+          role="progressbar"
+          aria-label="Audit progress"
+          aria-valuetext="Audit in progress"
+          aria-busy="true"
+        ></div>
+
+        <div class="mt-6 flex min-h-[2.5rem] items-center justify-center gap-3 text-center">
+          <span class="audit-stage-dot" aria-hidden="true"></span>
+          <span class="text-[1rem] font-medium text-cream" data-stage-label aria-hidden="true">
+            {stages[initialStage]}
+          </span>
+        </div>
+        <p class="mt-2 text-center text-[0.78rem] text-muted">Most audits finish in under a minute.</p>
+      </>
     )}
   </div>
 
@@ -93,29 +107,132 @@ const statusUrl = `/api/reports/${domain}/status`;
 <script>
   const root = document.querySelector<HTMLElement>("[data-audit-status]");
   const statusUrl = root?.dataset.url ?? "";
-  const bar = document.querySelector<SVGRectElement>("[data-progress-bar]");
-  const label = document.querySelector<HTMLElement>("[data-progress-label]");
+  const stageLabel = document.querySelector<HTMLElement>("[data-stage-label]");
+
+  let stages: string[] = [];
+  try {
+    stages = JSON.parse(root?.dataset.stages ?? "[]") as string[];
+  } catch {
+    stages = [];
+  }
+
+  const initial = Number(root?.dataset.initialStage ?? 0);
+  let stageIndex = Number.isFinite(initial) ? initial : 0;
+
+  if (root && root.dataset.status !== "failed" && stageLabel && stages.length) {
+    stageLabel.textContent = stages[stageIndex] ?? stages[0];
+
+    window.setInterval(() => {
+      stageIndex = (stageIndex + 1) % stages.length;
+      if (typeof stageLabel.animate === "function") {
+        stageLabel.animate(
+          [
+            { opacity: 0, transform: "translateY(4px)" },
+            { opacity: 1, transform: "translateY(0)" },
+          ],
+          { duration: 280, easing: "ease-out" },
+        );
+      }
+      stageLabel.textContent = stages[stageIndex];
+    }, 2500);
+  }
 
   async function poll() {
+    if (!statusUrl) return;
+
     try {
       const response = await fetch(statusUrl, { cache: "no-store" });
-      if (!response.ok) return;
-      const data = (await response.json()) as {
-        status: string;
-        progress: number;
-        phase: string;
-      };
-      if (data.status === "complete" || data.status === "failed") {
-        window.location.reload();
-        return;
+      if (response.ok) {
+        const data = (await response.json()) as { status: string };
+        const current = root?.dataset.status;
+        if (
+          data.status === "complete" ||
+          (data.status === "failed" && current !== "failed")
+        ) {
+          window.location.reload();
+          return;
+        }
       }
-      if (bar) bar.setAttribute("width", String(data.progress));
-      if (label) label.textContent = `${data.progress}%`;
     } catch {
-      // Try again on the next tick.
+      // Keep polling; a status endpoint blip is not a failed audit.
     }
+
     window.setTimeout(poll, 2000);
   }
 
   window.setTimeout(poll, 1500);
 </script>
+
+<style>
+  .audit-progress {
+    position: relative;
+    height: 0.55rem;
+    overflow: hidden;
+    border-radius: 999px;
+    background: rgba(196, 181, 253, 0.14);
+  }
+
+  .audit-progress::after {
+    content: "";
+    position: absolute;
+    inset-block: 0;
+    left: 0;
+    width: 44%;
+    border-radius: inherit;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(196, 181, 253, 0.9),
+      rgba(167, 139, 250, 1),
+      transparent
+    );
+    box-shadow: 0 0 14px rgba(167, 139, 250, 0.35);
+    animation: audit-sweep 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  }
+
+  .audit-stage-dot {
+    display: inline-block;
+    width: 0.5rem;
+    height: 0.5rem;
+    flex: 0 0 auto;
+    border-radius: 999px;
+    background: rgb(167 139 250);
+    box-shadow: 0 0 0 4px rgba(139, 92, 246, 0.14);
+    animation: audit-stage-pulse 1.8s ease-in-out infinite;
+  }
+
+  @keyframes audit-sweep {
+    0% {
+      transform: translateX(-110%);
+    }
+    100% {
+      transform: translateX(365%);
+    }
+  }
+
+  @keyframes audit-stage-pulse {
+    0%,
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.45;
+      transform: scale(0.8);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .audit-progress::after {
+      animation: none;
+      left: 0;
+      width: 100%;
+      opacity: 0.45;
+      transform: none;
+    }
+
+    .audit-stage-dot {
+      animation: none;
+    }
+  }
+</style>

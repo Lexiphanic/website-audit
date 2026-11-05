@@ -48,7 +48,7 @@ const path = `/reports/${domain}`;
 ) : row.status !== "complete" || !payload ? (
   <BaseLayout title={`Auditing ${domain}`} description={`The audit for ${domain} is running.`} path={path} noindex>
     <main id="main">
-      <ReportProgress domain={domain} status={row.status} phase={row.phase} progress={row.progress} error={row.error} />
+      <ReportProgress domain={domain} status={row.status} phase={row.phase} error={row.error} />
     </main>
   </BaseLayout>
 ) : (
