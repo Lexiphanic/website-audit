@@ -82,14 +82,6 @@ function siteUrl(path: string): string {
   }
 }
 
-function hostUrl(host: string): string {
-  try {
-    return new URL(`https://${host}/`).href;
-  } catch {
-    return "";
-  }
-}
-
 const apexCert = transport?.tls.apex?.certificate ?? null;
 const tlsSource = transport?.tls.apex?.source ?? "";
 const tlsSourceUrl =
@@ -554,13 +546,10 @@ const psi = performance?.psi;
         {thirdParties?.domains.length ? (
           <div class="mt-3 flex flex-wrap gap-2">
             {thirdParties.domains.map((domain) => (
-              <a class="badge badge-muted" href={hostUrl(domain.host)} target="_blank" rel="noopener noreferrer">
+              <span class="badge badge-muted">
                 {domain.host} · {domain.count}
                 {domain.categories.length ? ` · ${domain.categories.map(categoryLabel).join(", ")}` : ""}
-                <svg class="badge-external" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <path d="M7 17 17 7M9 7h8v8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
-                </svg>
-              </a>
+              </span>
             ))}
           </div>
         ) : (
@@ -665,7 +654,7 @@ const psi = performance?.psi;
           <p>
             DNS comes from <ReportLink href="https://www.cloudflare.com/application-services/products/dns/" label="Cloudflare DNS" /> with{" "}
             <ReportLink href="https://developers.google.com/speed/public-dns" label="Google Public DNS" /> as a fallback; registration data from{" "}
-            <ReportLink href="https://www.icann.org/rdap" label="RDAP" />; the certificate and TLS versions from{" "}
+            <ReportLink href="https://rdap.org/" label="RDAP" />; the certificate and TLS versions from{" "}
             <ReportLink href="https://www.ssllabs.com/ssltest/" label="Qualys SSL Labs" />, with{" "}
             <ReportLink href="https://crt.sh/" label="crt.sh" /> as a certificate fallback; HSTS preload status from{" "}
             <ReportLink href="https://hstspreload.org/" label="hstspreload.org" />. Legacy TLS 1.0/1.1 may show as “not checked” when SSL Labs

@@ -1,7 +1,7 @@
 import type { APIRoute } from "astro";
 import { env } from "cloudflare:workers";
 import { normalizeTarget, reportPath } from "../../../lib/audit/normalize";
-import { hasFreshReport, queueReport, failReport, setWorkflowId } from "../../../lib/db";
+import { claimReport, failReport, getReport, setWorkflowId } from "../../../lib/db";
 import { runAuditInline } from "../../../lib/workflow/inline";
 import { ukDate } from "../../../lib/util";
 import { clientIp, verifyTurnstile } from "../../../lib/turnstile";
@@ -11,7 +11,6 @@ export const prerender = false;
 interface Submission {
   url: string;
   token: string;
-  refresh: boolean;
   wantsJson: boolean;
 }
 
@@ -26,7 +25,6 @@ async function readSubmission(request: Request): Promise<Submission> {
     return {
       url: String(body.url ?? ""),
       token: String(body.turnstileToken ?? body["cf-turnstile-response"] ?? ""),
-      refresh: Boolean(body.refresh),
       wantsJson: true,
     };
   }
@@ -35,7 +33,6 @@ async function readSubmission(request: Request): Promise<Submission> {
   return {
     url: String(form.get("url") ?? ""),
     token: String(form.get("cf-turnstile-response") ?? ""),
-    refresh: form.get("refresh") === "1",
     wantsJson,
   };
 }
@@ -48,7 +45,7 @@ export const POST: APIRoute = async ({ request, redirect }) => {
     return Response.json({ error: "Could not read the form." }, { status: 400 });
   }
 
-  const { url, token, refresh, wantsJson } = submission;
+  const { url, token, wantsJson } = submission;
 
   const respond = (message: string, status = 400) => {
     if (wantsJson) return Response.json({ error: message }, { status });
@@ -78,21 +75,22 @@ export const POST: APIRoute = async ({ request, redirect }) => {
   const reportUrl = reportPath(target.domain);
 
   try {
-    if (!refresh) {
-      const existing = await hasFreshReport(env, target.domain, 5);
-      if (existing && existing.status !== "failed") {
-        return wantsJson
-          ? Response.json({ domain: target.domain, reportUrl, status: existing.status }, { status: 202 })
-          : redirect(reportUrl, 303);
-      }
-    }
-
     const date = ukDate();
-    await queueReport(env, {
+    const previous = await getReport(env, target.domain);
+    const claim = await claimReport(env, {
       domain: target.domain,
       date,
       url: `https://${target.domain}/`,
     });
+
+    if (!claim.claimed) {
+      if (claim.row) {
+        return wantsJson
+          ? Response.json({ domain: target.domain, reportUrl, status: claim.row.status }, { status: 202 })
+          : redirect(reportUrl, 303);
+      }
+      return respond("A scan is already in progress for that site. Try again shortly.", 409);
+    }
 
     if (String(env.APP_ENV) === "preview") {
       await runAuditInline(env, {
@@ -103,6 +101,17 @@ export const POST: APIRoute = async ({ request, redirect }) => {
       return wantsJson
         ? Response.json({ domain: target.domain, reportUrl }, { status: 201 })
         : redirect(reportUrl, 303);
+    }
+
+    // A stale claim may have replaced a Workflow that is still alive. Stop it
+    // before the new run starts, or it could overwrite this report later.
+    if (previous?.workflow_id && (previous.status === "queued" || previous.status === "running")) {
+      try {
+        const instance = await env.AUDIT_WORKFLOW.get(previous.workflow_id);
+        await instance.terminate();
+      } catch {
+        // It may already be finished; the new claim still wins.
+      }
     }
 
     const instance = await env.AUDIT_WORKFLOW.create({

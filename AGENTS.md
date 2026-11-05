@@ -45,7 +45,9 @@ Use Bun for everything. Verify with `bun run check`, `bun run test` and
   in `payload_json`, capped below D1's 100 KB statement limit. `report_date` is
   the date the report was generated and is not part of the URL or uniqueness key.
 - **Rate Limiting** (`SCAN_RATE`) is burst protection around the public scan
-  endpoint.
+  endpoint. A domain is claimed atomically in D1: completed or failed reports
+  are reused for ten minutes, and a queued/running scan is only replaceable
+  after thirty minutes.
 - **Turnstile** verifies the scan form in production.
 
 ### Directory map

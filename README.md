@@ -112,6 +112,11 @@ container running `openssl s_client`; the rest of the report does not change.
 location, keyed by client IP. Turnstile is the primary bot check; the binding is
 burst protection. The key is not stored.
 
+A domain also has a scan cooldown. A completed or failed report is reused for
+ten minutes. A queued or running scan cannot be replaced until it has been
+going for thirty minutes. The claim is an atomic D1 upsert, so two requests
+cannot start the same domain at once.
+
 ## Deployment
 
 Deployed as a Cloudflare Worker with static assets through **Workers Builds**.

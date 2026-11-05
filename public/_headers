@@ -21,6 +21,10 @@
 /icons/*
   Cache-Control: public, max-age=604800
 
+# Social preview
+/social-card.png
+  Cache-Control: public, max-age=604800
+
 # Text files that can change
 /robots.txt
   Cache-Control: public, max-age=3600

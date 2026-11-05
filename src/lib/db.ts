@@ -22,30 +22,26 @@ export async function getReport(env: Env, domain: string): Promise<ReportRow | n
     .first<ReportRow>();
 }
 
-export async function hasFreshReport(
-  env: Env,
-  domain: string,
-  minutes: number,
-): Promise<ReportRow | null> {
-  const row = await getReport(env, domain);
-  if (!row) return null;
-  const updated = new Date(row.updated_at).valueOf();
-  if (row.status === "queued" || row.status === "running") {
-    // A stuck run must not block the domain for ever.
-    return Date.now() - updated < 15 * 60_000 ? row : null;
-  }
-  if (row.status === "complete" && Date.now() - updated < minutes * 60_000) {
-    return row;
-  }
-  return null;
-}
+/** A completed or failed scan blocks the domain for this long. */
+export const SCAN_COOLDOWN_MS = 10 * 60_000;
 
-export async function queueReport(
+/** A queued or running scan older than this is treated as stale. */
+export const STALE_SCAN_MS = 30 * 60_000;
+
+/**
+ * Atomically claim the right to start a scan for a domain.
+ *
+ * The upsert only fires when the existing row is old enough, so two requests
+ * cannot both claim the same domain. A returning row means this request won.
+ */
+export async function claimReport(
   env: Env,
   input: { domain: string; date: string; url: string },
-): Promise<void> {
+): Promise<{ claimed: boolean; row: ReportRow | null }> {
   const now = nowIso();
-  await env.DB.prepare(
+  const freshBefore = new Date(Date.now() - SCAN_COOLDOWN_MS).toISOString();
+  const staleBefore = new Date(Date.now() - STALE_SCAN_MS).toISOString();
+  const claimedRow = await env.DB.prepare(
     `INSERT INTO reports (domain, report_date, url, status, phase, progress, created_at, updated_at)
      VALUES (?1, ?2, ?3, 'queued', 'queued', 0, ?4, ?4)
      ON CONFLICT(domain) DO UPDATE SET
@@ -59,10 +55,18 @@ export async function queueReport(
        payload_json = NULL,
        workflow_id = NULL,
        error = NULL,
-       updated_at = excluded.updated_at`,
+       created_at = excluded.created_at,
+       updated_at = excluded.updated_at
+     WHERE
+       (reports.status IN ('queued', 'running') AND reports.created_at <= ?5)
+       OR (reports.status NOT IN ('queued', 'running') AND reports.updated_at <= ?6)
+     RETURNING *`,
   )
-    .bind(input.domain, input.date, input.url, now)
-    .run();
+    .bind(input.domain, input.date, input.url, now, staleBefore, freshBefore)
+    .first<ReportRow>();
+
+  if (claimedRow) return { claimed: true, row: claimedRow };
+  return { claimed: false, row: await getReport(env, input.domain) };
 }
 
 export async function setWorkflowId(env: Env, domain: string, workflowId: string): Promise<void> {
