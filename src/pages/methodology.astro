@@ -1,5 +1,6 @@
 ---
 import BaseLayout from "../layouts/BaseLayout.astro";
+import ReportLink from "../components/ReportLink.astro";
 import { CATEGORIES, type CheckDefinition } from "../lib/audit/types";
 import { CHECK_DEFINITIONS, checksForCategory } from "../lib/audit/registry";
 import { site } from "../lib/site";
@@ -146,9 +147,9 @@ function severityTone(severity: CheckDefinition["severity"]): string {
         <h2 class="mt-3 font-display text-[clamp(1.6rem,3vw,2.2rem)] font-semibold text-cream">What this audit is not.</h2>
         <div class="mt-4 grid gap-3 text-[0.9rem] leading-relaxed text-muted min-[760px]:grid-cols-2">
           <p>It fetches public pages and a small file sample. It does not log in, submit forms, crawl the whole site or test for vulnerabilities.</p>
-          <p>Lighthouse and field Core Web Vitals are optional. Without a PageSpeed Insights key they are shown as not run, not guessed.</p>
-          <p>TLS details come from SSL Labs and the certificate from SSL Labs or crt.sh. A first scan can take a minute.</p>
-          <p>HSTS preload status is checked against hstspreload.org; the header alone only requests inclusion.</p>
+          <p>Lighthouse and field Core Web Vitals are optional. Without a <ReportLink href="https://pagespeed.web.dev/" label="PageSpeed Insights" /> key they are shown as not run, not guessed.</p>
+          <p>TLS details come from <ReportLink href="https://www.ssllabs.com/ssltest/" label="SSL Labs" /> and the certificate from SSL Labs or <ReportLink href="https://crt.sh/" label="crt.sh" />. A first scan can take a minute.</p>
+          <p>HSTS preload status is checked against <ReportLink href="https://hstspreload.org/" label="hstspreload.org" />; the header alone only requests inclusion.</p>
         </div>
         <p class="mt-5 text-[0.84rem] text-muted">
           Questions about a finding? Email <a class="text-violet-300 underline underline-offset-4" href={`mailto:${site.email}`}>{site.email}</a>.

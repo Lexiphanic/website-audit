@@ -326,6 +326,7 @@ const assets: Rule[] = [
   { name: "Three.js", category: "JavaScript library", patterns: [/three(?:\.min)?\.js/i], confidence: "medium" },
 ];
 
+/** Keep `technology-links.ts` in step with these rules so every badge links out. */
 const RULES: Rule[] = [
   ...platforms,
   ...frameworks,
@@ -340,6 +341,9 @@ const RULES: Rule[] = [
   ...hosting,
   ...assets,
 ];
+
+/** Every name a rule can return; the link coverage test uses this list. */
+export const FINGERPRINT_NAMES = RULES.map((rule) => rule.name);
 
 /** Detect technology fingerprints from markup, response headers and URLs. */
 export function detectFingerprints(input: {

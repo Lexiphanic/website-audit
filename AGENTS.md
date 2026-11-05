@@ -56,6 +56,7 @@ Use Bun for everything. Verify with `bun run check`, `bun run test` and
 | Workflow pipeline | `src/lib/workflow/audit.ts` |
 | Check metadata and copy | `src/lib/audit/registry.ts` |
 | Technology fingerprints | `src/lib/audit/fingerprints.ts` |
+| Technology vendor links | `src/lib/audit/technology-links.ts` |
 | Third-party and edge detection | `src/lib/audit/third-parties.ts` |
 | Facts collectors | `src/lib/audit/{dns,transport,html,files,security,performance,migration,tls}.ts` |
 | Check evaluation | `src/lib/audit/checks.ts` |

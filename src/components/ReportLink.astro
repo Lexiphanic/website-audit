@@ -1,0 +1,25 @@
+---
+interface Props {
+  href: string;
+  label?: string;
+  class?: string;
+}
+
+const { href, label, class: className = "" } = Astro.props;
+const external = /^https?:/i.test(href);
+const mail = /^mailto:/i.test(href);
+const safe = external || mail;
+---
+
+{safe ? (
+  <a
+    class={`report-link ${className}`}
+    href={href}
+    target={external ? "_blank" : undefined}
+    rel={external ? "noopener noreferrer" : undefined}
+  >
+    {label ?? href}
+  </a>
+) : (
+  <span class={className}>{label ?? href}</span>
+)}

@@ -1,5 +1,6 @@
 ---
 import BaseLayout from "../layouts/BaseLayout.astro";
+import ReportLink from "../components/ReportLink.astro";
 import { site } from "../lib/site";
 ---
 
@@ -15,10 +16,10 @@ import { site } from "../lib/site";
       <p>Reports are public at predictable addresses such as <span class="mono">/reports/example.com/2026-11-03</span>. They are marked <span class="mono">noindex</span> so search engines are asked not to index them, but anyone with the link can read them. Do not audit a site if the findings should not be public.</p>
 
       <h2>Turnstile</h2>
-      <p>The scan form uses Cloudflare Turnstile to stop automated abuse. Turnstile may set a challenge cookie and makes a request to Cloudflare. It is not used for advertising or cross-site tracking.</p>
+      <p>The scan form uses <ReportLink href="https://www.cloudflare.com/products/turnstile/" label="Cloudflare Turnstile" /> to stop automated abuse. Turnstile may set a challenge cookie and makes a request to Cloudflare. It is not used for advertising or cross-site tracking.</p>
 
       <h2>Server logs</h2>
-      <p>Cloudflare keeps operational request logs for the Worker, as it does for any site on its network. Those logs are used for reliability and abuse prevention, not for marketing profiles.</p>
+      <p><ReportLink href="https://www.cloudflare.com/" label="Cloudflare" /> keeps operational request logs for the Worker, as it does for any site on its network. Those logs are used for reliability and abuse prevention, not for marketing profiles.</p>
 
       <h2>Audited sites</h2>
       <p>The audit fetches publicly accessible pages, headers, DNS records and the TLS certificate. It does not log in, submit forms, crawl the whole site or test for vulnerabilities. If you own a site and want a report removed, email <a href={`mailto:${site.email}`}>{site.email}</a>.</p>
@@ -27,11 +28,11 @@ import { site } from "../lib/site";
       <h2>Who a scan talks to</h2>
       <p>A scan runs on Cloudflare and asks a small set of public services for the data it cannot see from the page alone. The audited domain, the DNS names derived from it (such as <span class="mono">_dmarc</span> and DKIM selectors) and its public URLs are sent to:</p>
       <ul>
-        <li><strong>Cloudflare DNS</strong> and, as a fallback, <strong>Google Public DNS</strong> for DNS records, email authentication records and the safety check before each request.</li>
-        <li><strong>RDAP.org</strong> and the authoritative domain registry for registration, expiry and registrar data.</li>
-        <li><strong>Qualys SSL Labs</strong> for the public certificate, TLS versions and grade. <strong>crt.sh</strong> is used only when SSL Labs has no certificate yet.</li>
-        <li><strong>Google's HSTS preload service</strong> for the browser preload-list status.</li>
-        <li><strong>Google PageSpeed Insights</strong> only when the operator has configured a PageSpeed API key. It receives the audited URL.</li>
+        <li><strong><ReportLink href="https://www.cloudflare.com/application-services/products/dns/" label="Cloudflare DNS" /></strong> and, as a fallback, <strong><ReportLink href="https://developers.google.com/speed/public-dns" label="Google Public DNS" /></strong> for DNS records, email authentication records and the safety check before each request.</li>
+        <li><strong><ReportLink href="https://www.rdap.org/" label="RDAP.org" /></strong> and the authoritative domain registry for registration, expiry and registrar data.</li>
+        <li><strong><ReportLink href="https://www.ssllabs.com/ssltest/" label="Qualys SSL Labs" /></strong> for the public certificate, TLS versions and grade. <strong><ReportLink href="https://crt.sh/" label="crt.sh" /></strong> is used only when SSL Labs has no certificate yet.</li>
+        <li><strong><ReportLink href="https://hstspreload.org/" label="Google's HSTS preload service" /></strong> for the browser preload-list status.</li>
+        <li><strong><ReportLink href="https://pagespeed.web.dev/" label="Google PageSpeed Insights" /></strong> only when the operator has configured a PageSpeed API key. It receives the audited URL.</li>
       </ul>
       <p>These requests come from Cloudflare's network, not from your browser, so the services do not receive your IP address. They receive the domain and public URLs, not your name or email address. Their own retention policies apply.</p>
       <p>The scan also fetches the audited site and the public pages and assets it links to, including its MTA-STS policy host. Those belong to the site being audited and are outside our control.</p>

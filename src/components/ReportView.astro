@@ -2,6 +2,8 @@
 import { CATEGORIES, type CheckResult, type ReportPayload } from "../lib/audit/types";
 import { definitionFor } from "../lib/audit/registry";
 import { ENGINE_VERSION, headlineForScore } from "../lib/audit/score";
+import ReportLink from "./ReportLink.astro";
+import TechnologyBadge from "./TechnologyBadge.astro";
 import { formatDate, ukDateTime } from "../lib/util";
 import { site } from "../lib/site";
 
@@ -70,7 +72,32 @@ function bytes(value: number): string {
   return `${(value / 1024 / 1024).toFixed(1)} MB`;
 }
 
+const siteBase = transport?.homepage?.finalUrl || `https://${payload.meta.domain}/`;
+
+function siteUrl(path: string): string {
+  try {
+    return new URL(path, siteBase).href;
+  } catch {
+    return "";
+  }
+}
+
+function hostUrl(host: string): string {
+  try {
+    return new URL(`https://${host}/`).href;
+  } catch {
+    return "";
+  }
+}
+
 const apexCert = transport?.tls.apex?.certificate ?? null;
+const tlsSource = transport?.tls.apex?.source ?? "";
+const tlsSourceUrl =
+  tlsSource === "SSL Labs"
+    ? "https://www.ssllabs.com/ssltest/"
+    : tlsSource === "crt.sh"
+      ? "https://crt.sh/"
+      : "";
 const hsts = transport?.hsts;
 const score = payload.meta.score;
 const grade = payload.meta.grade;
@@ -209,9 +236,9 @@ const psi = performance?.psi;
               <tbody>
                 {transport?.probes.map((probe) => (
                   <tr>
-                    <td class="mono">{probe.url}</td>
+                    <td class="mono">{probe.url ? <ReportLink href={probe.url} /> : "—"}</td>
                     <td><span class={`badge ${(probe.hops[0]?.status ?? probe.status) >= 300 ? "badge-info" : "badge-ok"}`}>{probe.hops[0]?.status ?? probe.status ?? "—"}</span></td>
-                    <td class="mono break-all">{probe.finalUrl}</td>
+                    <td class="mono break-all">{probe.finalUrl ? <ReportLink href={probe.finalUrl} /> : "—"}</td>
                     <td>{probe.hops.length}</td>
                   </tr>
                 )) ?? <tr><td colspan="4">Transport data was not collected.</td></tr>}
@@ -236,7 +263,7 @@ const psi = performance?.psi;
               <div><dt>Signature</dt><dd>{apexCert.sigAlg || "—"}</dd></div>
               <div><dt>TLS details</dt><dd>{transport?.tls.apex?.ocspStapling ? "OCSP stapled" : "No OCSP stapling"} · {typeof transport?.tls.apex?.forwardSecrecy === "number" && (transport.tls.apex.forwardSecrecy & 4) === 4 ? "forward secret" : "FS not confirmed"}</dd></div>
               <div><dt>TLS grade</dt><dd>{transport?.tls.apex?.grade ? `${transport.tls.apex.grade} · SSL Labs` : transport?.tls.apex?.pending ? "Pending · SSL Labs scan running" : transport?.tls.apex?.error ? `Not available · ${transport.tls.apex.error}` : "Not available"}</dd></div>
-              <div><dt>Source</dt><dd>{transport?.tls.apex?.source || "—"}</dd></div>
+              <div><dt>Source</dt><dd>{tlsSourceUrl ? <ReportLink href={tlsSourceUrl} label={tlsSource} /> : tlsSource || "—"}</dd></div>
               <div><dt>Names</dt><dd class="break-all">{apexCert.sans.slice(0, 8).join(", ") || apexCert.subject}</dd></div>
             </dl>
           ) : (
@@ -397,10 +424,10 @@ const psi = performance?.psi;
         <div class="report-panel">
           <h3 class="report-panel-title">Inventory</h3>
           <div class="mt-3 flex flex-wrap gap-2">
-            {migration?.ecommerce.map((item) => <span class="badge badge-info">{item}</span>)}
-            {migration?.booking.map((item) => <span class="badge badge-info">{item}</span>)}
-            {migration?.analytics.map((item) => <span class="badge badge-muted">{item}</span>)}
-            {migration?.legacy.map((item) => <span class="badge badge-warn">{item}</span>)}
+            {migration?.ecommerce.map((item) => <TechnologyBadge name={item} tone="info" />)}
+            {migration?.booking.map((item) => <TechnologyBadge name={item} tone="info" />)}
+            {migration?.analytics.map((item) => <TechnologyBadge name={item} />)}
+            {migration?.legacy.map((item) => <TechnologyBadge name={item} tone="warn" />)}
             {!migration?.ecommerce.length && !migration?.booking.length && !migration?.analytics.length && !migration?.legacy.length && (
               <span class="text-[0.84rem] text-muted">No commerce, booking, analytics or legacy signals detected.</span>
             )}
@@ -427,7 +454,7 @@ const psi = performance?.psi;
               <div class="grid grid-cols-1 gap-2 min-[600px]:grid-cols-[10rem_1fr]">
                 <p class="text-[0.7rem] font-semibold tracking-[0.1em] text-violet-300 uppercase">{group}</p>
                 <div class="flex flex-wrap gap-2">
-                  {items.map((item) => <span class="badge badge-muted">{item}</span>)}
+                  {items.map((item) => <TechnologyBadge name={item} />)}
                 </div>
               </div>
             ))}
@@ -527,10 +554,13 @@ const psi = performance?.psi;
         {thirdParties?.domains.length ? (
           <div class="mt-3 flex flex-wrap gap-2">
             {thirdParties.domains.map((domain) => (
-              <span class="badge badge-muted">
+              <a class="badge badge-muted" href={hostUrl(domain.host)} target="_blank" rel="noopener noreferrer">
                 {domain.host} · {domain.count}
                 {domain.categories.length ? ` · ${domain.categories.map(categoryLabel).join(", ")}` : ""}
-              </span>
+                <svg class="badge-external" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M7 17 17 7M9 7h8v8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+                </svg>
+              </a>
             ))}
           </div>
         ) : (
@@ -596,7 +626,7 @@ const psi = performance?.psi;
               <tbody>
                 {Object.values(files?.entries ?? {}).filter((entry) => entry.path.startsWith("/.well-known") || entry.path === "/security.txt" || entry.path === "/llms.txt").map((entry) => (
                   <tr>
-                    <td class="mono">{entry.path}</td>
+                    <td class="mono">{entry.path ? <ReportLink href={siteUrl(entry.path)} label={entry.path} /> : "—"}</td>
                     <td>{entry.soft404 ? "soft 404" : entry.status || "—"}</td>
                     <td class="text-muted">{entry.contentType.split(";")[0] || "—"}</td>
                   </tr>
@@ -633,10 +663,13 @@ const psi = performance?.psi;
             not log in, submit forms, crawl the whole site or test for vulnerabilities.
           </p>
           <p>
-            DNS comes from Cloudflare DNS with Google Public DNS as a fallback; registration data from RDAP;
-            the certificate and TLS versions from Qualys SSL Labs, with crt.sh as a certificate fallback; HSTS
-            preload status from hstspreload.org. Legacy TLS 1.0/1.1 may show as “not checked” when SSL Labs
-            does not return protocol details. PageSpeed Insights is optional and, when no key is configured,
+            DNS comes from <ReportLink href="https://www.cloudflare.com/application-services/products/dns/" label="Cloudflare DNS" /> with{" "}
+            <ReportLink href="https://developers.google.com/speed/public-dns" label="Google Public DNS" /> as a fallback; registration data from{" "}
+            <ReportLink href="https://www.icann.org/rdap" label="RDAP" />; the certificate and TLS versions from{" "}
+            <ReportLink href="https://www.ssllabs.com/ssltest/" label="Qualys SSL Labs" />, with{" "}
+            <ReportLink href="https://crt.sh/" label="crt.sh" /> as a certificate fallback; HSTS preload status from{" "}
+            <ReportLink href="https://hstspreload.org/" label="hstspreload.org" />. Legacy TLS 1.0/1.1 may show as “not checked” when SSL Labs
+            does not return protocol details. <ReportLink href="https://pagespeed.web.dev/" label="PageSpeed Insights" /> is optional and, when no key is configured,
             Lighthouse and field Core Web Vitals are marked as not run.
           </p>
           <p>

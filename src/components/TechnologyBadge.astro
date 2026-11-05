@@ -1,0 +1,25 @@
+---
+import { technologyUrl } from "../lib/audit/technology-links";
+
+type Tone = "ok" | "warn" | "bad" | "info" | "muted";
+
+interface Props {
+  name: string;
+  tone?: Tone;
+}
+
+const { name, tone = "muted" } = Astro.props;
+const url = technologyUrl(name);
+const className = `badge badge-${tone}${url ? " badge-link" : ""}`;
+---
+
+{url ? (
+  <a class={className} href={url} target="_blank" rel="noopener noreferrer">
+    {name}
+    <svg class="badge-external" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M7 17 17 7M9 7h8v8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+    </svg>
+  </a>
+) : (
+  <span class={className}>{name}</span>
+)}
