@@ -1,6 +1,7 @@
 import { XMLParser } from "fast-xml-parser";
 import { parseHTML } from "linkedom";
-import { fetchFollowing, followRedirects } from "./fetch";
+import { getDomain } from "tldts";
+import { fetchFollowing, fetchText, followRedirects } from "./fetch";
 import {
   detectThirdParties,
   emptyThirdPartyFacts,
@@ -34,7 +35,6 @@ const WELL_KNOWN_PATHS = [
   "/.well-known/change-password",
   "/.well-known/apple-app-site-association",
   "/.well-known/assetlinks.json",
-  "/.well-known/mta-sts.txt",
   "/.well-known/gpc.json",
   "/.well-known/trust.txt",
   "/.well-known/nodeinfo",
@@ -413,7 +413,20 @@ export async function collectFiles(
   const llmsSource = llmsRoot ?? llmsWellKnown;
   const llmsStats = markdownStats(llmsSource?.body ?? "");
 
-  const mtaStsRaw = get("/.well-known/mta-sts.txt");
+  // MTA-STS is published under `mta-sts.<registrable-domain>`, not on the
+  // homepage host. The policy fetch must not follow redirects.
+  const registrable = getDomain(base.hostname) ?? base.hostname;
+  let mtaStsRaw: Awaited<ReturnType<typeof fetchText>> | null = null;
+  try {
+    const response = await fetchText(`https://mta-sts.${registrable}/.well-known/mta-sts.txt`, {
+      timeoutMs: 5000,
+      maxBytes: 64_000,
+      headers: { accept: "text/plain" },
+    });
+    if (response.status === 200) mtaStsRaw = response;
+  } catch {
+    // A missing policy host is normal before MTA-STS is configured.
+  }
   const mtaStsFields = new Map<string, string>();
   for (const line of (mtaStsRaw?.body ?? "").split(/\r?\n/)) {
     const index = line.indexOf(":");
@@ -548,7 +561,7 @@ export async function collectFiles(
     changePassword: ok("/.well-known/change-password"),
     aasa: ok("/.well-known/apple-app-site-association") && validJson(get("/.well-known/apple-app-site-association")?.body ?? ""),
     assetlinks: ok("/.well-known/assetlinks.json") && validJson(get("/.well-known/assetlinks.json")?.body ?? ""),
-    mtaSts: ok("/.well-known/mta-sts.txt"),
+    mtaSts: Boolean(mtaStsRaw),
     gpc: ok("/.well-known/gpc.json") && validJson(get("/.well-known/gpc.json")?.body ?? ""),
     trustTxt: ok("/.well-known/trust.txt"),
     nodeinfo: ok("/.well-known/nodeinfo"),
